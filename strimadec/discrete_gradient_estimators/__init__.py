@@ -2,4 +2,5 @@ from strimadec.discrete_gradient_estimators.REINFORCE import REINFORCE
 from strimadec.discrete_gradient_estimators.NVIL import NVIL
 from strimadec.discrete_gradient_estimators.CONCRETE import CONCRETE
 from strimadec.discrete_gradient_estimators.REBAR import REBAR
+from strimadec.discrete_gradient_estimators.RELAX import RELAX
 from strimadec.discrete_gradient_estimators.analytical import analytical

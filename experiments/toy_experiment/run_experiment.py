@@ -2,18 +2,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
+import torch.nn.functional as F
 
 from strimadec.discrete_gradient_estimators import analytical
-from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR
+from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
 
 
 def run_experiment():
-    estimator_names = ["analytical", "REINFORCE", "NVIL", "CONCRETE", "REBAR"]
-    # estimator_names = ["analytical"]
+    estimator_names = ["analytical", "REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX"]
+    # estimator_names = ["REINFORCE"]
     # define setup
     setup_dict = {
         # "target": torch.tensor([0.34, 0.33, 0.33]).unsqueeze(0),
-        "target": torch.tensor([0.45, 0.55]).unsqueeze(0),
+        "target": torch.tensor([0.499, 0.501]).unsqueeze(0),
         "loss_func": lambda x, y: (x - y) ** 2,
         "num_epochs": 5000,
     }
@@ -39,6 +40,7 @@ def plot(setup_dict, results_dict):
     optimal_loss = min(possible_losses)
     # start plot
     fig = plt.figure(figsize=(13, 5))
+    plt.suptitle(f"target = {target}")
     plt.subplot(1, 2, 1)
     for i in range(len(results_dict)):
         losses = results_dict[str(i)]["expected_losses"]
@@ -80,7 +82,8 @@ def build_experimental_setup(estimator_name, setup_dict):
     """
     x = torch.ones([1, 1])
     # use the simplest possible network (can be easily adapted)
-    encoder_net = nn.Sequential(nn.Linear(1, setup_dict["target"].shape[1]))
+    num_classes = setup_dict["target"].shape[1]
+    encoder_net = nn.Sequential(nn.Linear(1, num_classes, bias=False))
 
     params = {
         "SEED": 42,
@@ -92,7 +95,7 @@ def build_experimental_setup(estimator_name, setup_dict):
         "lr": 0.01,
         "loss_func": setup_dict["loss_func"],
         "estimator_name": estimator_name,
-        "FIXED_BATCH": 1000,
+        "FIXED_BATCH": 5000,
     }
 
     if estimator_name == "NVIL":
@@ -105,7 +108,26 @@ def build_experimental_setup(estimator_name, setup_dict):
         params["eta"] = torch.tensor([1.0], requires_grad=True)
         params["log_temp"] = torch.tensor([0.0], requires_grad=True)
         params["tune_lr"] = 0.01
+    elif estimator_name == "RELAX":
+        params["tune_lr"] = 0.01
+        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.5)
     return params
+
+
+class C_PHI(nn.Module):
+    """Control variate for RELAX"""
+
+    def __init__(self, num_classes, log_temp_init):
+        super(C_PHI, self).__init__()
+        self.network = nn.Sequential(nn.Linear(num_classes, 1))
+        self.log_temp = nn.Parameter(torch.tensor(log_temp_init), requires_grad=True)
+        return
+
+    def forward(self, z):
+        temp = self.log_temp.exp()
+        z_tilde = F.softmax(z / temp, dim=1)
+        out = self.network(z_tilde)
+        return out
 
 
 def run_stochastic_optimization(params):
@@ -151,6 +173,9 @@ def run_stochastic_optimization(params):
     elif estimator_name == "REBAR":
         eta, log_temp = params["eta"], params["log_temp"]
         tuneable_params = [eta, log_temp]
+    elif estimator_name == "RELAX":
+        c_phi = params["c_phi"]
+        tuneable_params = c_phi.parameters()
     # define tuneable_params optimizer (if they exist)
     if tuneable_params:
         tune_optimizer = torch.optim.Adam(tuneable_params, lr=params["tune_lr"])
@@ -182,6 +207,8 @@ def run_stochastic_optimization(params):
         elif params["estimator_name"] == "REBAR":
             temp, eta = params["log_temp"].exp(), params["eta"]
             estimator = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
+        elif params["estimator_name"] == "RELAX":
+            estimator = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator.backward()
 
         optimizer.step()
@@ -216,6 +243,8 @@ def run_stochastic_optimization(params):
         elif params["estimator_name"] == "REBAR":
             temp, eta = params["log_temp"].exp(), params["eta"]
             estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
+        elif params["estimator_name"] == "RELAX":
+            estimator_ups = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator_ups.backward()
         # retrieve gradient of estimator [FIXED_BATCH, L]
         g_estimator = probs_logits_ups.grad

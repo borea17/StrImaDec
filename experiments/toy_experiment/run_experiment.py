@@ -1,51 +1,116 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import matplotlib.pyplot as plt
 
-from strimadec.discrete_gradient_estimators import REINFORCE
+from strimadec.discrete_gradient_estimators import analytical
+from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR
 
 
 def run_experiment():
-    estimator_names = ["REINFORCE"]
-    for estimator_name in estimator_names:
-        params = build_experimental_setup(estimator_name)
-        results = run_stochastic_optimization(params)
+    estimator_names = ["analytical", "REINFORCE", "NVIL", "CONCRETE", "REBAR"]
+    # estimator_names = ["analytical"]
+    # define setup
+    setup_dict = {
+        # "target": torch.tensor([0.34, 0.33, 0.33]).unsqueeze(0),
+        "target": torch.tensor([0.45, 0.55]).unsqueeze(0),
+        "loss_func": lambda x, y: (x - y) ** 2,
+        "num_epochs": 5000,
+    }
+    # store results in results_dict
+    results_dict = {}
+    for i, estimator_name in enumerate(estimator_names):
+        params = build_experimental_setup(estimator_name, setup_dict)
+        results_dict[str(i)] = run_stochastic_optimization(params)
+        results_dict[str(i)]["params"] = params
+    plot(setup_dict, results_dict)
     return
 
 
-def build_experimental_setup(estimator_name):
+def plot(setup_dict, results_dict):
+    # compute optimal loss
+    target = setup_dict["target"]
+    loss_func = setup_dict["loss_func"]
+    num_classes = target.shape[1]
+    possible_losses = torch.zeros(num_classes)
+    for class_ind in range(num_classes):
+        one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0)
+        possible_losses[class_ind] = loss_func(one_hot_class, target).mean()
+    optimal_loss = min(possible_losses)
+    # start plot
+    fig = plt.figure(figsize=(13, 5))
+    plt.subplot(1, 2, 1)
+    for i in range(len(results_dict)):
+        losses = results_dict[str(i)]["expected_losses"]
+        steps = np.arange(len(losses))
+        name = results_dict[str(i)]["params"]["estimator_name"]
+        plt.plot(steps, losses, label=name)
+    plt.plot([steps[0], steps[-1]], [optimal_loss, optimal_loss], label="optimal", color="gray")
+    plt.ylabel("Loss")
+    plt.xlabel("Steps")
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    for i in range(len(results_dict)):
+        log_vars_grad = np.log(results_dict[str(i)]["vars_grad"] + 1e-12)
+        steps = np.arange(len(log_vars_grad))
+        name = results_dict[str(i)]["params"]["estimator_name"]
+        plt.plot(steps, log_vars_grad, label=name)
+    plt.xlabel("Steps")
+    plt.ylabel("Log (Var (Gradient Estimator) )")
+    plt.legend()
+    plt.show()
+    return
+
+
+def build_experimental_setup(estimator_name, setup_dict):
     """
         creates the experimental setup params given the estimator_name
 
     Args:
         estimator_name (str): name of gradient estimator
+        setup_dict (dict): dictionary containing the following setup variables
+            target (torch tensor): defines the target in the stochastic optimization problem [1, L]
+            loss_func (method): loss function using sampled class and a target
+            num_epochs (int):
 
     Returns:
         params (dict): dictionary that can be used to execute
             `run_stochastic_optimization`
     """
     x = torch.ones([1, 1])
-    target = torch.tensor([0.34, 0.33, 0.33]).unsqueeze(0)
-    encoder_net = nn.Sequential(nn.Linear(1, 3), nn.ReLU())
+    # use the simplest possible network (can be easily adapted)
+    encoder_net = nn.Sequential(nn.Linear(1, setup_dict["target"].shape[1]))
 
     params = {
         "SEED": 42,
         "x": x,
-        "target": target,
+        "target": setup_dict["target"],
         "encoder_net": encoder_net,
-        "num_epochs": 1,
+        "num_epochs": setup_dict["num_epochs"],
         "batch_size": 1,
         "lr": 0.01,
-        "loss_func": lambda x, y: (x - y) ** 2,
+        "loss_func": setup_dict["loss_func"],
         "estimator_name": estimator_name,
         "FIXED_BATCH": 1000,
     }
+
+    if estimator_name == "NVIL":
+        baseline_net = nn.Sequential(nn.Linear(1, 1))
+        params["baseline_net"] = baseline_net
+        params["tune_lr"] = 0.1
+    elif estimator_name == "CONCRETE":
+        params["temp"] = 1.0
+    elif estimator_name == "REBAR":
+        params["eta"] = torch.tensor([1.0], requires_grad=True)
+        params["log_temp"] = torch.tensor([0.0], requires_grad=True)
+        params["tune_lr"] = 0.01
     return params
 
 
 def run_stochastic_optimization(params):
     """
-        execute the stochastic optimization for a specific setup defined in params
+        execute the stochastic optimization for a specific setup defined in the params dict
 
     Args:
         params (dict): dictionary containing all necessary variables (vary depending on estimator)
@@ -78,7 +143,7 @@ def run_stochastic_optimization(params):
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
     # define tuneable_params (if they exist) based on estimator_name
-    if estimator_name in ["REINFORCE", "CONCRETE"]:
+    if estimator_name in ["analytical", "REINFORCE", "CONCRETE"]:
         tuneable_params = []
     elif estimator_name == "NVIL":
         baseline_net = params["baseline_net"]
@@ -105,8 +170,18 @@ def run_stochastic_optimization(params):
         probs_logits_ups = probs_logits.repeat(params["batch_size"], 1)
         target_ups = target.repeat(params["batch_size"], 1)
         # compute estimator through which we can backpropagate
-        if params["estimator_name"] == "REINFORCE":
+        if params["estimator_name"] == "analytical":
+            estimator = analytical(probs_logits_ups, target_ups, loss_func)
+        elif params["estimator_name"] == "REINFORCE":
             estimator = REINFORCE(probs_logits_ups, target_ups, loss_func)
+        elif params["estimator_name"] == "NVIL":
+            baseline_vals_ups = baseline_net.forward(x).repeat(params["batch_size"], 1)
+            estimator = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
+        elif params["estimator_name"] == "CONCRETE":
+            estimator = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
+        elif params["estimator_name"] == "REBAR":
+            temp, eta = params["log_temp"].exp(), params["eta"]
+            estimator = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
         estimator.backward()
 
         optimizer.step()
@@ -129,8 +204,18 @@ def run_stochastic_optimization(params):
         target_ups = target.repeat(params["FIXED_BATCH"], 1)
         probs_logits_ups = encoder_net.forward(x_ups)
         probs_logits_ups.retain_grad()
-        if params["estimator_name"] == "REINFORCE":
+        if params["estimator_name"] == "analytical":
+            estimator_ups = analytical(probs_logits_ups, target_ups, loss_func)
+        elif params["estimator_name"] == "REINFORCE":
             estimator_ups = REINFORCE(probs_logits_ups, target_ups, loss_func)
+        elif params["estimator_name"] == "NVIL":
+            baseline_vals_ups = baseline_net.forward(x_ups)
+            estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
+        elif params["estimator_name"] == "CONCRETE":
+            estimator_ups = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
+        elif params["estimator_name"] == "REBAR":
+            temp, eta = params["log_temp"].exp(), params["eta"]
+            estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
         estimator_ups.backward()
         # retrieve gradient of estimator [FIXED_BATCH, L]
         g_estimator = probs_logits_ups.grad

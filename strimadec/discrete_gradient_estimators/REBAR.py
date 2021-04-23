@@ -20,9 +20,9 @@ def REBAR(probs_logits, target, temp, eta, loss_func):
     # compute log probabilities and probabilities
     log_probs = F.log_softmax(probs_logits, dim=1)
     probs = F.softmax(probs_logits, dim=1)
-    # sample unit noise u, v
-    u = torch.rand(log_probs.shape).to(probs_logits.device)
-    v = torch.rand(log_probs.shape).to(probs_logits.device)
+    # sample unit noise u, v (exclude 0, since log won't work otherwise)
+    u = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
+    v = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
     # convert u to u_Gumbel
     u_Gumbel = -torch.log(-torch.log(u))
     # Gumbel Max Trick to obtain discrete latent p(z|x)

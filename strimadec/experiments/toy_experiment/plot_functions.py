@@ -12,8 +12,8 @@ def plot_toy_results(setup_dict, results):
         losses = results_dict["expected_losses"]
         steps = np.arange(len(losses))
         name = results_dict["name"]
-        plt.plot(steps, losses, label=name, color=colors[i])
-    # plt.plot([steps[0], steps[-1]], [optimal_loss, optimal_loss], label="optimal", color="gray")
+        if "analytical" in name:
+            plt.plot(steps, losses, label=name, color="gray")
     plt.ylabel("Loss")
     plt.xlabel("Steps")
     plt.legend()

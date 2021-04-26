@@ -74,7 +74,7 @@ def plot(setup_dict, results):
         if name != "analytical":
             # smoothen log_var
             smooth_log_var = uniform_filter1d(log_vars_grad, size=5, mode="reflect")
-            plt.plot(steps, smooth_log_var, label=name, color=colors[i])
+            plt.plot(steps, log_vars_grad, label=name, color=colors[i])
     plt.xlabel("Steps")
     plt.ylabel("Log (Var (Gradient Estimator) )")
     plt.legend()
@@ -100,7 +100,9 @@ def build_experimental_setup(estimator_name, setup_dict):
     x = torch.ones([1, 1])
     # use the simplest possible network (can be easily adapted)
     num_classes = setup_dict["target"].shape[1]
-    encoder_net = nn.Sequential(nn.Linear(1, num_classes, bias=False))
+    linear_layer_encoder = nn.Linear(1, num_classes, bias=False)
+    linear_layer_encoder.weight.data.fill_(0.0)
+    encoder_net = nn.Sequential(linear_layer_encoder)
 
     params = {
         "SEED": 42,

@@ -43,19 +43,26 @@ def run_stochastic_optimization(params):
     x, target, encoder_net = params["x"], params["target"], params["encoder_net"]
     loss_func = params["loss_func"]
     estimator_name = params["estimator_name"]
+    # push to cuda if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    x, target, encoder_net = x.to(device), target.to(device), encoder_net.to(device)
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
     # define tuneable_params (if they exist) based on estimator_name
-    if estimator_name in ["analytical", "REINFORCE", "CONCRETE"]:
+    if estimator_name in ["analytical", "REINFORCE"]:
         tuneable_params = []
+    elif estimator_name == "CONCRETE":
+        temp = params["temp"].to(device)
     elif estimator_name == "NVIL":
-        baseline_net = params["baseline_net"]
+        baseline_net = params["baseline_net"].to(device)
         tuneable_params = baseline_net.parameters()
     elif estimator_name == "REBAR":
         eta, log_temp = params["eta"], params["log_temp"]
+        eta = eta.to(device).detach().requires_grad_(True)
+        log_temp = log_temp.to(device).detach().requires_grad_(True)
         tuneable_params = [eta, log_temp]
     elif estimator_name == "RELAX":
-        c_phi = params["c_phi"]
+        c_phi = params["c_phi"].to(device)
         tuneable_params = c_phi.parameters()
     # define tuneable_params optimizer (if they exist)
     if tuneable_params:
@@ -84,9 +91,9 @@ def run_stochastic_optimization(params):
             baseline_vals_ups = baseline_net.forward(x).repeat(params["batch_size"], 1)
             estimator = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif params["estimator_name"] == "CONCRETE":
-            estimator = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
+            estimator = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
         elif params["estimator_name"] == "REBAR":
-            temp, eta = params["log_temp"].exp(), params["eta"]
+            temp = log_temp.exp()
             estimator = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
         elif params["estimator_name"] == "RELAX":
             estimator = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
@@ -102,13 +109,15 @@ def run_stochastic_optimization(params):
         expected_loss = 0
         for class_ind in range(num_classes):
             # define one hot class vector corresponding to class_ind [1, L]
-            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0)
+            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
             # compute loss corresponding to class_ind
             cur_loss = loss_func(one_hot_class, target).mean()
             expected_loss += probs[:, class_ind] * cur_loss
         expected_losses[epoch] = expected_loss
         # variance of gradient estimator (upsample by FIXED_BATCH for useful var estimator)
         optimizer.zero_grad()
+        if tuneable_params:
+            tune_optimizer.zero_grad()
         x_ups = x.repeat(params["FIXED_BATCH"], 1)
         target_ups = target.repeat(params["FIXED_BATCH"], 1)
         probs_logits_ups = encoder_net.forward(x_ups)
@@ -121,9 +130,9 @@ def run_stochastic_optimization(params):
             baseline_vals_ups = baseline_net.forward(x_ups)
             estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif params["estimator_name"] == "CONCRETE":
-            estimator_ups = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
+            estimator = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
         elif params["estimator_name"] == "REBAR":
-            temp, eta = params["log_temp"].exp(), params["eta"]
+            temp = log_temp.exp()
             estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
         elif params["estimator_name"] == "RELAX":
             estimator_ups = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
@@ -136,7 +145,7 @@ def run_stochastic_optimization(params):
         # make sure that analytical estimator converges to true optimum by computing optimal loss
         possible_losses = torch.zeros(num_classes)
         for class_ind in range(num_classes):
-            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0)
+            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
             possible_losses[class_ind] = loss_func(one_hot_class, target).mean()
         optimal_loss = min(possible_losses)
         assert (optimal_loss - expected_loss) ** 2 < 1e-6, "analytical solution seems to be wrong"

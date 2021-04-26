@@ -13,7 +13,12 @@ def plot_toy_results(results):
         losses = results_dict["expected_losses"]
         steps = np.arange(len(losses))
         name = results_dict["name"]
+<<<<<<< HEAD
         plt.plot(steps, losses, label=name, color=colors[i])
+=======
+        if "analytical" in name:
+            plt.plot(steps, losses, label=name, color="gray")
+>>>>>>> main
     plt.ylabel("Loss")
     plt.xlabel("Steps")
     plt.legend()

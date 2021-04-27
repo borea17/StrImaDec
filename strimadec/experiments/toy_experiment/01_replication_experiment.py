@@ -4,7 +4,7 @@ import os
 import torch
 import numpy as np
 
-from strimadec.experiments.toy_experiment import run_stochastic_optimization, plot_toy_results
+from strimadec.experiments.toy_experiment.utils import run_stochastic_optimization, plot_toy_results
 
 
 def run_experiment(run=True):
@@ -16,11 +16,10 @@ def run_experiment(run=True):
     Args:
         run (bool): decides whether experiment is executed or stored results are used
     """
-    estimator_names = ["REINFORCE", "REBAR", "RELAX", "analytical"]
+    estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
     store_path = f"{store_dir}/replication_experiment.npy"
-    print(store_path)
     if run:  # run experiment and save results in file
         # define params
         target = torch.tensor([0.499, 0.501]).unsqueeze(0)
@@ -34,7 +33,8 @@ def run_experiment(run=True):
         np.save(store_path, results)
     else:  # load experimental results from file
         results = np.load(store_path, allow_pickle=True)
-    plot_toy_results(results)
+    store_path_fig = f"{store_dir}/replication_experiment.pdf"
+    plot_toy_results(results, store_path_fig)
     return
 
 
@@ -101,4 +101,4 @@ def build_experimental_setup(estimator_name):
 
 
 if __name__ == "__main__":
-    run_experiment(run=False)
+    run_experiment(run=True)

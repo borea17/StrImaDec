@@ -42,13 +42,9 @@ def REBAR(probs_logits, target, temp, eta, loss_func):
     f_s_tilde = loss_func(s_tilde, target)
     log_prob = dists.Categorical(probs=probs).log_prob(z_ind).unsqueeze(1)
     # compute gradient estimator (detach eta and temp such that backward won't affect those)
-    z_tilde_detach_temp = F.softmax((log_probs + u_Gumbel) / temp.detach(), dim=1)
-    s_tilde_detach_temp = F.softmax(v_prime / temp.detach(), dim=1)
-    f_z_tilde_detach_temp = loss_func(z_tilde_detach_temp, target)
-    f_s_tilde_detach_temp = loss_func(s_tilde_detach_temp, target)
-    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta.detach() * (
-        f_z_tilde_detach_temp - f_s_tilde_detach_temp
-    )
+    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + (
+        eta * (f_z_tilde - f_s_tilde)
+    ).detach()
     # compute variance estimator (use partial derivatives for the sake of clarity)
     g_log_prob = grad(
         log_prob,

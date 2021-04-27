@@ -49,7 +49,7 @@ def run_stochastic_optimization(params):
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
     # define tuneable_params (if they exist) based on estimator_name
-    if estimator_name in ["analytical", "REINFORCE"]:
+    if estimator_name in ["Exact gradient", "REINFORCE"]:
         tuneable_params = []
     elif estimator_name == "CONCRETE":
         temp = params["temp"].to(device)
@@ -83,7 +83,7 @@ def run_stochastic_optimization(params):
         probs_logits_ups = probs_logits.repeat(params["batch_size"], 1)
         target_ups = target.repeat(params["batch_size"], 1)
         # compute estimator through which we can backpropagate
-        if params["estimator_name"] == "analytical":
+        if params["estimator_name"] == "Exact gradient":
             estimator = analytical(probs_logits_ups, target_ups, loss_func)
         elif params["estimator_name"] == "REINFORCE":
             estimator = REINFORCE(probs_logits_ups, target_ups, loss_func)
@@ -122,7 +122,7 @@ def run_stochastic_optimization(params):
         target_ups = target.repeat(params["FIXED_BATCH"], 1)
         probs_logits_ups = encoder_net.forward(x_ups)
         probs_logits_ups.retain_grad()
-        if params["estimator_name"] == "analytical":
+        if params["estimator_name"] == "Exact gradient":
             estimator_ups = analytical(probs_logits_ups, target_ups, loss_func)
         elif params["estimator_name"] == "REINFORCE":
             estimator_ups = REINFORCE(probs_logits_ups, target_ups, loss_func)
@@ -141,7 +141,7 @@ def run_stochastic_optimization(params):
         g_estimator = probs_logits_ups.grad
         for class_ind in range(num_classes):
             vars_grad[epoch, class_ind] = g_estimator.var(dim=0)[class_ind].item()
-    if params["estimator_name"] == "analytical":
+    if params["estimator_name"] == "Exact gradient":
         # make sure that analytical estimator converges to true optimum by computing optimal loss
         possible_losses = torch.zeros(num_classes)
         for class_ind in range(num_classes):

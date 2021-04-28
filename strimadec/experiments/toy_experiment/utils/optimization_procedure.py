@@ -45,6 +45,8 @@ def run_stochastic_optimization(params):
     estimator_name = params["estimator_name"]
     # push to cuda if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+    # device = "cpu"
     x, target, encoder_net = x.to(device), target.to(device), encoder_net.to(device)
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
@@ -53,19 +55,21 @@ def run_stochastic_optimization(params):
         tuneable_params = []
     elif estimator_name == "CONCRETE":
         temp = params["temp"].to(device)
+        tuneable_params = []
     elif estimator_name == "NVIL":
         baseline_net = params["baseline_net"].to(device)
         tuneable_params = baseline_net.parameters()
     elif estimator_name == "REBAR":
-        eta, log_temp = params["eta"], params["log_temp"]
-        eta = eta.to(device).detach().requires_grad_(True)
-        log_temp = log_temp.to(device).detach().requires_grad_(True)
+        eta, log_temp = params["eta"].to(device), params["log_temp"].to(device)
+
+        eta = eta.clone().to(device).detach().requires_grad_(True)
+        log_temp = log_temp.clone().to(device).detach().requires_grad_(True)
         tuneable_params = [eta, log_temp]
     elif estimator_name == "RELAX":
         c_phi = params["c_phi"].to(device)
         tuneable_params = c_phi.parameters()
-    # define tuneable_params optimizer (if they exist)
-    if tuneable_params:
+
+    if tuneable_params:  # define tuneable_params optimizer (if they exist)
         tune_optimizer = torch.optim.Adam(tuneable_params, lr=params["tune_lr"])
     # track expected_losses and gradient variances
     expected_losses = np.zeros([params["num_epochs"]])
@@ -130,7 +134,7 @@ def run_stochastic_optimization(params):
             baseline_vals_ups = baseline_net.forward(x_ups)
             estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif params["estimator_name"] == "CONCRETE":
-            estimator = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
+            estimator_ups = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
         elif params["estimator_name"] == "REBAR":
             temp = log_temp.exp()
             estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])

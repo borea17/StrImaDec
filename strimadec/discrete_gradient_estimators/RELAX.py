@@ -40,7 +40,7 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     f_z_tilde = loss_func(z_tilde, target)
     f_s_tilde = loss_func(s_tilde, target)
     log_prob = dists.Categorical(probs=probs).log_prob(z_ind).unsqueeze(1)
-    # detach c_phi
+    # compute gradient estimator (detach c_phi such that backward won't affect it)
     estimator = (f_z - f_s_tilde).detach() * log_prob + f_z_tilde.detach() - f_s_tilde.detach()
     # compute variance estimator (use partial derivatives for the sake of clarity)
     g_log_prob = grad(
@@ -66,6 +66,6 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     )[0]
     g_estimator = (f_z - f_s_tilde) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
     var_estimator = (g_estimator ** 2).mean(1).sum()
-    # backward through var estimator to optimize eta and temp
+    # backward through var estimator to optimize c_phi
     var_estimator.backward(create_graph=True)
     return estimator.mean(1).sum()

@@ -22,7 +22,6 @@ def run_experiment(run=True):
     store_path = f"{store_dir}/replication_experiment.npy"
     if run:  # run experiment and save results in file
         # define params
-        target = torch.tensor([0.499, 0.501]).unsqueeze(0)
         results = []
         for i, estimator_name in enumerate(estimator_names):
             print(f"Start Experiment with {estimator_name}-estimator...")
@@ -68,13 +67,7 @@ def build_experimental_setup(estimator_name):
         "FIXED_BATCH": 1000,
     }
 
-    if estimator_name == "NVIL":
-        baseline_net = torch.nn.Sequential(torch.nn.Linear(1, 1))
-        params["baseline_net"] = baseline_net
-        params["tune_lr"] = 0.1
-    elif estimator_name == "CONCRETE":
-        params["temp"] = 1.0
-    elif estimator_name == "REBAR":
+    if estimator_name == "REBAR":
         params["eta"] = torch.tensor([1.0], requires_grad=True)
         params["log_temp"] = torch.tensor([0.0], requires_grad=True)
         params["tune_lr"] = 0.01
@@ -85,7 +78,7 @@ def build_experimental_setup(estimator_name):
 
             def __init__(self, num_classes, log_temp_init):
                 super(C_PHI, self).__init__()
-                self.network = torch.nn.Sequential(torch.nn.Linear(num_classes, 1))
+                self.network = torch.nn.Sequential(torch.nn.Linear(num_classes, num_classes))
                 self.log_temp = torch.nn.Parameter(torch.tensor(log_temp_init), requires_grad=True)
                 return
 
@@ -95,8 +88,8 @@ def build_experimental_setup(estimator_name):
                 out = self.network(z_tilde)
                 return out
 
-        params["tune_lr"] = 0.001
-        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.5)
+        params["tune_lr"] = 0.01
+        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.0)
     return params
 
 

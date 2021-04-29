@@ -1,5 +1,8 @@
+import time
+
 import torch
 import numpy as np
+from pytorch_lightning import seed_everything
 
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
@@ -27,8 +30,8 @@ def run_stochastic_optimization(params):
             estimator_name == "NVIL":
                 baseline_net (nn.Sequential): neural baseline network
             estimator_name == "REBAR":
-                eta (torch tensor): tuneable hyperparameter that scales control variate [1]
-                log_temp (torch tensor): tuneable hyperparameter (temperature of concrete) [1]
+                eta (nn.Parameter): tuneable hyperparameter that scales control variate [1]
+                log_temp (nn.Parameter): tuneable hyperparameter (temperature of concrete) [1]
             estimator_name == "RELAX":
                 c_phi (nn.Sequential): neural network that takes relaxed & conditioned relaxed input
 
@@ -38,45 +41,47 @@ def run_stochastic_optimization(params):
             vars_grad (numpy array): variance of gradient estimator per epoch [num_epochs]
     """
     # make optimization procedure reproducible
-    torch.manual_seed(params["SEED"])
+    seed_everything(params["SEED"])
     # retrieve independent params
     x, target, encoder_net = params["x"], params["target"], params["encoder_net"]
     loss_func = params["loss_func"]
     estimator_name = params["estimator_name"]
-    # push to cuda if available
+    # push to cuda if available (rather for testing than for efficiency)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
-    # device = "cpu"
     x, target, encoder_net = x.to(device), target.to(device), encoder_net.to(device)
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
     # define tuneable_params (if they exist) based on estimator_name
-    if estimator_name in ["Exact gradient", "REINFORCE"]:
+    if "REINFORCE" in estimator_name or "Exact gradient" in estimator_name:
         tuneable_params = []
-    elif estimator_name == "CONCRETE":
+    elif "CONCRETE" in estimator_name:
         temp = params["temp"].to(device)
         tuneable_params = []
-    elif estimator_name == "NVIL":
+    elif "NVIL" in estimator_name:
         baseline_net = params["baseline_net"].to(device)
         tuneable_params = baseline_net.parameters()
-    elif estimator_name == "REBAR":
-        eta, log_temp = params["eta"].to(device), params["log_temp"].to(device)
-
-        eta = eta.clone().to(device).detach().requires_grad_(True)
-        log_temp = log_temp.clone().to(device).detach().requires_grad_(True)
+    elif "REBAR" in estimator_name:
+        eta, log_temp = params["eta"], params["log_temp"]
+        # simple `.to(device)` causes error on cuda due to `is_leaf` becoming `False`
+        eta = eta.to(device).detach().requires_grad_(True)
+        log_temp = log_temp.to(device).detach().requires_grad_(True)
         tuneable_params = [eta, log_temp]
-    elif estimator_name == "RELAX":
+    elif "RELAX" in estimator_name:
         c_phi = params["c_phi"].to(device)
         tuneable_params = c_phi.parameters()
 
     if tuneable_params:  # define tuneable_params optimizer (if they exist)
         tune_optimizer = torch.optim.Adam(tuneable_params, lr=params["tune_lr"])
-    # track expected_losses and gradient variances
+    # track expected_losses, gradient variances and computation times
     expected_losses = np.zeros([params["num_epochs"]])
     num_classes = target.shape[1]
     vars_grad = np.zeros([params["num_epochs"], num_classes])
+    elapsed_times = np.zeros([params["num_epochs"]])
     # start training procedure
     for epoch in range(params["num_epochs"]):
+        tic = time.time()
+
         optimizer.zero_grad()
         if tuneable_params:
             tune_optimizer.zero_grad()
@@ -87,71 +92,75 @@ def run_stochastic_optimization(params):
         probs_logits_ups = probs_logits.repeat(params["batch_size"], 1)
         target_ups = target.repeat(params["batch_size"], 1)
         # compute estimator through which we can backpropagate
-        if params["estimator_name"] == "Exact gradient":
+        if "Exact gradient" in estimator_name:
             estimator = analytical(probs_logits_ups, target_ups, loss_func)
-        elif params["estimator_name"] == "REINFORCE":
+        elif "REINFORCE" in estimator_name:
             estimator = REINFORCE(probs_logits_ups, target_ups, loss_func)
-        elif params["estimator_name"] == "NVIL":
+        elif "NVIL" in estimator_name:
             baseline_vals_ups = baseline_net.forward(x).repeat(params["batch_size"], 1)
             estimator = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
-        elif params["estimator_name"] == "CONCRETE":
+        elif "CONCRETE" in estimator_name:
             estimator = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
-        elif params["estimator_name"] == "REBAR":
+        elif "REBAR" in estimator_name:
             temp = log_temp.exp()
             estimator = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
-        elif params["estimator_name"] == "RELAX":
+        elif "RELAX" in estimator_name:
             estimator = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
-        estimator.backward()
+        estimator.sum().backward()
 
         optimizer.step()
         if tuneable_params:
             tune_optimizer.step()
 
         ################## TRACK METRICS ########################
-        # expected loss
+        ### computation times in seconds ###
+        elapsed_time = time.time() - tic
+        elapsed_times[epoch] = elapsed_time
+        ### expected loss ###
+        # get probs from probs_logits [1, L]
         probs = torch.softmax(probs_logits, 1)
-        expected_loss = 0
-        for class_ind in range(num_classes):
-            # define one hot class vector corresponding to class_ind [1, L]
-            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
-            # compute loss corresponding to class_ind
-            cur_loss = loss_func(one_hot_class, target).mean()
-            expected_loss += probs[:, class_ind] * cur_loss
+        # get batch_size one-hot vectors [1, L, L]
+        one_hot_vectors = torch.eye(probs.shape[1]).unsqueeze(0).to(probs.device)
+        # compute loss for each one_hot_vector [1, L]
+        loss_per_one_hot = params["loss_func"](one_hot_vectors, target.unsqueeze(1)).sum(2)
+        # compute expected loss by multiplying with probs
+        expected_loss = (probs * loss_per_one_hot).sum()
         expected_losses[epoch] = expected_loss
-        # variance of gradient estimator (upsample by FIXED_BATCH for useful var estimator)
-        optimizer.zero_grad()
-        if tuneable_params:
-            tune_optimizer.zero_grad()
+        ### variance of gradient estimator (upsample by FIXED_BATCH for useful var estimator) ###
         x_ups = x.repeat(params["FIXED_BATCH"], 1)
         target_ups = target.repeat(params["FIXED_BATCH"], 1)
         probs_logits_ups = encoder_net.forward(x_ups)
         probs_logits_ups.retain_grad()
-        if params["estimator_name"] == "Exact gradient":
+        if "Exact gradient" in estimator_name:
             estimator_ups = analytical(probs_logits_ups, target_ups, loss_func)
-        elif params["estimator_name"] == "REINFORCE":
+        elif "REINFORCE" in estimator_name:
             estimator_ups = REINFORCE(probs_logits_ups, target_ups, loss_func)
-        elif params["estimator_name"] == "NVIL":
+        elif "NVIL" in estimator_name:
             baseline_vals_ups = baseline_net.forward(x_ups)
             estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
-        elif params["estimator_name"] == "CONCRETE":
+        elif "CONCRETE" in estimator_name:
             estimator_ups = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
-        elif params["estimator_name"] == "REBAR":
+        elif "REBAR" in estimator_name:
             temp = log_temp.exp()
             estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
-        elif params["estimator_name"] == "RELAX":
+        elif "RELAX" in estimator_name:
             estimator_ups = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
-        estimator_ups.backward()
+        estimator_ups.sum().backward()
         # retrieve gradient of estimator [FIXED_BATCH, L]
         g_estimator = probs_logits_ups.grad
         for class_ind in range(num_classes):
             vars_grad[epoch, class_ind] = g_estimator.var(dim=0)[class_ind].item()
-    if params["estimator_name"] == "Exact gradient":
+    if "Exact gradient" in estimator_name:
         # make sure that analytical estimator converges to true optimum by computing optimal loss
         possible_losses = torch.zeros(num_classes)
         for class_ind in range(num_classes):
             one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
-            possible_losses[class_ind] = loss_func(one_hot_class, target).mean()
+            possible_losses[class_ind] = loss_func(one_hot_class, target).sum()
         optimal_loss = min(possible_losses)
         assert (optimal_loss - expected_loss) ** 2 < 1e-6, "analytical solution seems to be wrong"
-    results = {"expected_losses": expected_losses, "vars_grad": vars_grad.sum(1)}
+    results = {
+        "expected_losses": expected_losses,
+        "vars_grad": vars_grad.sum(1),
+        "elapsed_times": elapsed_times,
+    }
     return results

@@ -7,7 +7,7 @@ import numpy as np
 from strimadec.experiments.toy_experiment.utils import run_stochastic_optimization, plot_replication
 
 
-def run_experiment(train=True):
+def run_experiment(run=True):
     """
         executes the replication experiment of the thesis, i.e., replicating
         the results of Grathwohl et al. (2018) using a Categorical distribution
@@ -16,16 +16,21 @@ def run_experiment(train=True):
     Args:
         run (bool): decides whether experiment is executed or stored results are used
     """
-    estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
+    # estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
+    estimator_names = ["NVIL tune_lr=0.1", "NVIL tune_lr=0.001"]
+    batch_sizes = [1, 100]
+    tune_lrs = [0.1, 0.001]
+
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
     store_path = f"{store_dir}/replication_experiment.npy"
-    if train:  # run experiment and save results in file
+    if run:  # run experiment and save results in file
         # define params
         results = []
         for i, estimator_name in enumerate(estimator_names):
             print(f"Start Experiment with {estimator_name}-estimator...")
             params = build_experimental_setup(estimator_name)
+            params["tune_lr"] = tune_lrs[i]
             current_dict = run_stochastic_optimization(params)
             current_dict["name"] = estimator_name
             results.append(current_dict)
@@ -50,7 +55,7 @@ def build_experimental_setup(estimator_name):
     """
     x = torch.ones([1, 1])
     target = torch.tensor([0.499, 0.501]).unsqueeze(0)
-    SEED = 5
+    SEED = 42  # 1
     torch.manual_seed(SEED)  # seed here to make network initializations deterministic
     # use the simplest possible network (can be easily adapted)
     num_classes = target.shape[1]
@@ -61,19 +66,24 @@ def build_experimental_setup(estimator_name):
         "x": x,
         "target": target,
         "encoder_net": encoder_net,
-        "num_epochs": 10000,
+        "num_epochs": 5000,
         "batch_size": 1,
         "lr": 0.01,
-        "loss_func": lambda x, y: (1 / num_classes) * (x - y) ** 2,
+        "loss_func": lambda x, y: (x - y) ** 2,
         "estimator_name": estimator_name,
         "FIXED_BATCH": 1000,
     }
 
-    if estimator_name == "REBAR":
+    if "REBAR" in estimator_name:
         params["eta"] = torch.nn.Parameter(torch.tensor([1.0]), requires_grad=True)
         params["log_temp"] = torch.nn.Parameter(torch.tensor([0.0]), requires_grad=True)
         params["tune_lr"] = 0.001
-    elif estimator_name == "RELAX":
+
+    elif "NVIL" in estimator_name:
+        baseline_net = torch.nn.Sequential(torch.nn.Linear(1, 1))
+        params["baseline_net"] = baseline_net
+        params["tune_lr"] = 0.1
+    elif "RELAX" in estimator_name:
 
         class C_PHI(torch.nn.Module):
             """
@@ -108,17 +118,4 @@ def build_experimental_setup(estimator_name):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--load",
-        default=True,
-        action="store_false",
-        dest="train",
-        help="load results instead of actual training",
-    )
-    parse_results = parser.parse_args()
-    train = parse_results.train
-
-    run_experiment(train)
+    run_experiment(run=True)

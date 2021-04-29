@@ -3,7 +3,7 @@ from setuptools import find_packages
 
 setup(
     name="strimadec",
-    version="1.0",
+    version="1.3",
     license="MIT",
     description="Structured Image Decomposition Reference Implementation",
     author="Markus Borea",

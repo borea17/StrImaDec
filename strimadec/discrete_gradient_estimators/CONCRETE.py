@@ -11,6 +11,9 @@ def CONCRETE(probs_logits, target, temp, loss_func):
         target (tensor): target tensor [batch, L]
         temp (float): temperature to use for the concrete distribution
         loss_func (method): loss function that takes the sampled class vectors as input
+
+    Returns:
+        continuous_loss (tensor): batch-wise loss [batch]
     """
     # get concrete distribution
     concrete_dist = dists.RelaxedOneHotCategorical(temperature=temp, logits=probs_logits)
@@ -18,4 +21,4 @@ def CONCRETE(probs_logits, target, temp, loss_func):
     continuous_samples = concrete_dist.rsample()
     # evaluate the loss_func at the continuous samples [batch, L]
     continuous_loss = loss_func(continuous_samples, target)
-    return continuous_loss.mean()
+    return continuous_loss.sum(1)

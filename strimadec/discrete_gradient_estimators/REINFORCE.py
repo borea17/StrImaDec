@@ -11,6 +11,9 @@ def REINFORCE(probs_logits, target, loss_func):
         probs_logits (tensor): categorical probabilities in logits [batch, L]
         target (tensor): target tensor [batch, L]
         loss_func (method): loss function that takes the sampled class vectors and target as input
+
+    Returns:
+        estimator (tensor): batch-wise loss [batch]
     """
     # get categorial distribution
     categorical_dist = dists.Categorical(logits=probs_logits)
@@ -23,4 +26,4 @@ def REINFORCE(probs_logits, target, loss_func):
     loss = loss_func(sampled_class, target)
     # compute estimator [batch, L]
     estimator = loss.detach() * categorical_dist.log_prob(sampled_indices).unsqueeze(1)
-    return estimator.mean(1).sum()
+    return estimator.sum(1)

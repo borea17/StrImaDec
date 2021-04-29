@@ -15,6 +15,9 @@ def RELAX(probs_logits, target, c_phi, loss_func):
         target (tensor): target tensor [batch, L]
         c_phi (nn.Sequential): neural control variate for RELAX
         loss_func (method): loss function that takes the sampled class vectors as input
+
+    Returns:
+        estimator (tensor): batch-wise loss (including variance loss) [batch]
     """
     # compute log probabilities and probabilities
     log_probs = F.log_softmax(probs_logits, dim=1)
@@ -64,8 +67,10 @@ def RELAX(probs_logits, target, c_phi, loss_func):
         create_graph=True,
         retain_graph=True,
     )[0]
+    # compute gradient estimator as a function of eta and temp [batch, L]
     g_estimator = (f_z - f_s_tilde) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
-    var_estimator = (g_estimator ** 2).mean(1).sum()
-    # backward through var estimator to optimize c_phi
-    var_estimator.backward(create_graph=True)
-    return estimator.mean(1).sum()
+    # compute variance estimator [batch, L]
+    var_estimator = g_estimator ** 2
+    # # backward through var estimator to optimize c_phi
+    # var_estimator.backward(create_graph=True)
+    return estimator.sum(1) + var_estimator.sum(1)

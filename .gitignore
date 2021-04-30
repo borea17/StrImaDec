@@ -8,6 +8,7 @@ __pycache__/
 
 venv2/
 results/
+data/
 
 # Distribution / packaging
 .Python

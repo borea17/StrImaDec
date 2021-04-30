@@ -53,10 +53,7 @@ def run_stochastic_optimization(params):
     # define optimzer for encoder_net
     optimizer = torch.optim.Adam(encoder_net.parameters(), lr=params["lr"])
     # define tuneable_params (if they exist) based on estimator_name
-    if "REINFORCE" in estimator_name or "Exact gradient" in estimator_name:
-        tuneable_params = []
-    elif "CONCRETE" in estimator_name:
-        temp = params["temp"].to(device)
+    if any(est in estimator_name for est in ["REINFORCE", "Exact gradient", "CONCRETE"]):
         tuneable_params = []
     elif "NVIL" in estimator_name:
         baseline_net = params["baseline_net"].to(device)
@@ -64,9 +61,9 @@ def run_stochastic_optimization(params):
     elif "REBAR" in estimator_name:
         eta, log_temp = params["eta"], params["log_temp"]
         # simple `.to(device)` causes error on cuda due to `is_leaf` becoming `False`
-        eta = eta.to(device).detach().requires_grad_(True)
+        # eta = eta.to(device).detach().requires_grad_(True)
         log_temp = log_temp.to(device).detach().requires_grad_(True)
-        tuneable_params = [eta, log_temp]
+        tuneable_params = [log_temp]
     elif "RELAX" in estimator_name:
         c_phi = params["c_phi"].to(device)
         tuneable_params = c_phi.parameters()
@@ -100,10 +97,10 @@ def run_stochastic_optimization(params):
             baseline_vals_ups = baseline_net.forward(x).repeat(params["batch_size"], 1)
             estimator = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif "CONCRETE" in estimator_name:
-            estimator = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
+            estimator = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
+            estimator = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
         elif "RELAX" in estimator_name:
             estimator = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator.sum().backward()
@@ -125,7 +122,7 @@ def run_stochastic_optimization(params):
         loss_per_one_hot = params["loss_func"](one_hot_vectors, target.unsqueeze(1)).sum(2)
         # compute expected loss by multiplying with probs
         expected_loss = (probs * loss_per_one_hot).sum()
-        expected_losses[epoch] = expected_loss
+        expected_losses[epoch] = expected_loss.item()
         ### variance of gradient estimator (upsample by FIXED_BATCH for useful var estimator) ###
         x_ups = x.repeat(params["FIXED_BATCH"], 1)
         target_ups = target.repeat(params["FIXED_BATCH"], 1)
@@ -139,10 +136,10 @@ def run_stochastic_optimization(params):
             baseline_vals_ups = baseline_net.forward(x_ups)
             estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif "CONCRETE" in estimator_name:
-            estimator_ups = CONCRETE(probs_logits_ups, target_ups, temp, loss_func)
+            estimator_ups = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, params["loss_func"])
+            estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
         elif "RELAX" in estimator_name:
             estimator_ups = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator_ups.sum().backward()

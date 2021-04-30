@@ -1,0 +1,1 @@
+from strimadec.datasets.single_object_datasets import MNIST

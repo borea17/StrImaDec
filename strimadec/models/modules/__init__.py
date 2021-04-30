@@ -1,0 +1,1 @@
+from strimadec.models.modules.VAE import VAE

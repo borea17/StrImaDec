@@ -17,9 +17,9 @@ def run_experiment(run=True):
         run (bool): decides whether experiment is executed or stored results are used
     """
     # estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
-    estimator_names = ["NVIL tune_lr=0.1", "NVIL tune_lr=0.001"]
+    estimator_names = ["REBAR tune_lr=0.1", "REBAR tune_lr=0.001"]
     batch_sizes = [1, 100]
-    tune_lrs = [0.1, 0.001]
+    tune_lrs = [0.01, 0.005]
 
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
@@ -56,10 +56,11 @@ def build_experimental_setup(estimator_name):
     x = torch.ones([1, 1])
     target = torch.tensor([0.499, 0.501]).unsqueeze(0)
     SEED = 42  # 1
-    torch.manual_seed(SEED)  # seed here to make network initializations deterministic
     # use the simplest possible network (can be easily adapted)
     num_classes = target.shape[1]
-    encoder_net = torch.nn.Sequential(torch.nn.Linear(1, num_classes, bias=False))
+    linear_layer_encoder = torch.nn.Linear(1, num_classes, bias=False)
+    linear_layer_encoder.weight.data.fill_(0.0)
+    encoder_net = torch.nn.Sequential(linear_layer_encoder)
 
     params = {
         "SEED": SEED,
@@ -80,6 +81,7 @@ def build_experimental_setup(estimator_name):
         params["tune_lr"] = 0.001
 
     elif "NVIL" in estimator_name:
+        torch.manual_seed(SEED)  # seed here to make network initializations deterministic
         baseline_net = torch.nn.Sequential(torch.nn.Linear(1, 1))
         params["baseline_net"] = baseline_net
         params["tune_lr"] = 0.1
@@ -112,6 +114,7 @@ def build_experimental_setup(estimator_name):
                 out = self.network(z_tilde)
                 return out
 
+        torch.manual_seed(SEED)  # seed here to make network initializations deterministic
         params["tune_lr"] = 0.01
         params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.0)
     return params

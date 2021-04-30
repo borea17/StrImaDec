@@ -4,107 +4,60 @@ import os
 import torch
 import numpy as np
 
-from strimadec.experiments.toy_experiment.utils import run_stochastic_optimization, plot_replication
+from strimadec.experiments.toy_experiment.utils import (
+    run_stochastic_optimization,
+    plot_toy,
+    build_experimental_setup,
+)
 
 
-def run_experiment(train=True):
+def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
     """
         executes the replication experiment of the thesis, i.e., replicating
         the results of Grathwohl et al. (2018) using a Categorical distribution
         instead of a Bernoulli distribution
 
     Args:
-        run (bool): decides whether experiment is executed or stored results are used
+        train (bool): decides whether experiment is executed or stored results are used
+        num_epochs (int): number of epochs to train each estimator
+        num_repetitions (int): number of repetitions for each estimator experiment
     """
+    target = torch.tensor([0.499, 0.501]).unsqueeze(0)
     estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
     store_path = f"{store_dir}/replication_experiment.npy"
     if train:  # run experiment and save results in file
-        # define params
-        results = []
+        results = {}
         for i, estimator_name in enumerate(estimator_names):
-            print(f"Start Experiment with {estimator_name}-estimator...")
-            params = build_experimental_setup(estimator_name)
-            current_dict = run_stochastic_optimization(params)
-            current_dict["name"] = estimator_name
-            results.append(current_dict)
+            losses = np.zeros([num_repetitions, num_epochs])
+            vars_grad = np.zeros([num_repetitions, num_epochs])
+            elapsed_times = np.zeros([num_repetitions, num_epochs])
+            for i_experiment in range(num_repetitions):
+                print(f"Start {estimator_name}-estimator {i_experiment + 1}/{num_repetitions} ...")
+                SEED = i_experiment
+                params = build_experimental_setup(estimator_name, target, num_epochs, SEED)
+                current_results_dict = run_stochastic_optimization(params)
+
+                losses[i_experiment] = current_results_dict["expected_losses"]
+                vars_grad[i_experiment] = current_results_dict["vars_grad"]
+                elapsed_times[i_experiment] = current_results_dict["elapsed_times"]
+            results[estimator_name] = {
+                "losses": losses,
+                "vars_grad": vars_grad,
+                "elapsed_times": elapsed_times,
+            }
+            # store current estimator results
+            store_path_estimator = f"{store_dir}/toy_experiment_{estimator_name}.npy"
+            np.save(store_path_estimator, results[estimator_name])
+        # store all results
         np.save(store_path, results)
     else:  # load experimental results from file
-        results = np.load(store_path, allow_pickle=True)
+        results = np.load(store_path, allow_pickle=True).item()
+    # plot results and store them
     store_path_fig = f"{store_dir}/replication_experiment.pdf"
-    plot_replication(results, store_path_fig)
+    plot_toy(results, store_path_fig)
     return
-
-
-def build_experimental_setup(estimator_name):
-    """
-        creates the experimental setup params given the estimator_name
-
-    Args:
-        estimator_name (str): name of gradient estimator
-
-    Returns:
-        params (dict): dictionary that can be used to execute
-            `run_stochastic_optimization`
-    """
-    x = torch.ones([1, 1])
-    target = torch.tensor([0.499, 0.501]).unsqueeze(0)
-    SEED = 5
-    torch.manual_seed(SEED)  # seed here to make network initializations deterministic
-    # use the simplest possible network (can be easily adapted)
-    num_classes = target.shape[1]
-    encoder_net = torch.nn.Sequential(torch.nn.Linear(1, num_classes, bias=False))
-
-    params = {
-        "SEED": SEED,
-        "x": x,
-        "target": target,
-        "encoder_net": encoder_net,
-        "num_epochs": 10000,
-        "batch_size": 1,
-        "lr": 0.01,
-        "loss_func": lambda x, y: (1 / num_classes) * (x - y) ** 2,
-        "estimator_name": estimator_name,
-        "FIXED_BATCH": 1000,
-    }
-
-    if estimator_name == "REBAR":
-        params["eta"] = torch.nn.Parameter(torch.tensor([1.0]), requires_grad=True)
-        params["log_temp"] = torch.nn.Parameter(torch.tensor([0.0]), requires_grad=True)
-        params["tune_lr"] = 0.001
-    elif estimator_name == "RELAX":
-
-        class C_PHI(torch.nn.Module):
-            """
-                Control variate for RELAX,
-                NOTE: this is only the neural part of the control variate which will be used as
-                      the adapted input in the loss function
-
-            Args:
-                num_classes (int): number of classes
-                log_temp_init (float): logarithmized init temperature for continuous relaxation
-            """
-
-            def __init__(self, num_classes, log_temp_init):
-                super(C_PHI, self).__init__()
-                self.network = torch.nn.Sequential(
-                    torch.nn.Linear(num_classes, num_classes),
-                    torch.nn.ReLU(),
-                    torch.nn.Linear(num_classes, num_classes),
-                )
-                self.log_temp = torch.nn.Parameter(torch.tensor(log_temp_init), requires_grad=True)
-                return
-
-            def forward(self, z):
-                temp = self.log_temp.exp()
-                z_tilde = torch.softmax(z / temp, dim=1)
-                out = self.network(z_tilde)
-                return out
-
-        params["tune_lr"] = 0.01
-        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.0)
-    return params
 
 
 if __name__ == "__main__":
@@ -118,7 +71,19 @@ if __name__ == "__main__":
         dest="train",
         help="load results instead of actual training",
     )
+    parser.add_argument(
+        "--num_epochs", default=None, action="store", type=int, help="number of epochs to train"
+    )
+    parser.add_argument(
+        "--num_repetitions",
+        default=None,
+        action="store",
+        type=int,
+        help="number of repetitions for each estimator experiment",
+    )
     parse_results = parser.parse_args()
     train = parse_results.train
+    num_epochs = parse_results.num_epochs
+    num_repetitions = parse_results.num_repetitions
 
-    run_experiment(train)
+    run_experiment(train=train, num_epochs=num_epochs, num_repetitions=num_repetitions)

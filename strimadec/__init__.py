@@ -1,4 +1,4 @@
+import strimadec.datasets
 import strimadec.discrete_gradient_estimators
 import strimadec.experiments
-
-# import strimadec.models
+import strimadec.models

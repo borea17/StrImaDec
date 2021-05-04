@@ -71,6 +71,4 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     g_estimator = (f_z - f_s_tilde) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
     # compute variance estimator [batch, L]
     var_estimator = g_estimator ** 2
-    # # backward through var estimator to optimize c_phi
-    # var_estimator.backward(create_graph=True)
-    return estimator.sum(1) + var_estimator.sum(1)
+    return estimator.sum(1) + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z.sum(1)

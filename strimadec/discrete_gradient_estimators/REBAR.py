@@ -74,4 +74,4 @@ def REBAR(probs_logits, target, temp, eta, loss_func):
     var_estimator = g_estimator ** 2
     # # backward through var estimator to optimize eta and temp
     # var_estimator.backward(create_graph=True)
-    return estimator.sum(1) + var_estimator.sum(1)
+    return estimator.sum(1) + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z.sum(1)

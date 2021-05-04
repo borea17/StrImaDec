@@ -9,7 +9,7 @@ from strimadec.models import DVAE
 def run_experiment():
     dataset_name = "MNIST"
     estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
-    estimator_name = ["NVIL"]
+    estimator_name = "Exact gradient"
     decoder_distribution = "Bernoulli"
     config = build_config(dataset_name, estimator_name, decoder_distribution)
     # make experiment reproducible

@@ -92,17 +92,17 @@ def run_stochastic_optimization(params):
         if "Exact gradient" in estimator_name:
             estimator = analytical(probs_logits_ups, target_ups, loss_func)
         elif "REINFORCE" in estimator_name:
-            estimator = REINFORCE(probs_logits_ups, target_ups, loss_func)
+            estimator, _ = REINFORCE(probs_logits_ups, target_ups, loss_func)
         elif "NVIL" in estimator_name:
             baseline_vals_ups = baseline_net.forward(x).repeat(params["batch_size"], 1)
-            estimator = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
+            estimator, _ = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif "CONCRETE" in estimator_name:
             estimator = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
+            estimator, _ = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
         elif "RELAX" in estimator_name:
-            estimator = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
+            estimator, _ = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator.sum().backward()
 
         optimizer.step()
@@ -131,17 +131,17 @@ def run_stochastic_optimization(params):
         if "Exact gradient" in estimator_name:
             estimator_ups = analytical(probs_logits_ups, target_ups, loss_func)
         elif "REINFORCE" in estimator_name:
-            estimator_ups = REINFORCE(probs_logits_ups, target_ups, loss_func)
+            estimator_ups, _ = REINFORCE(probs_logits_ups, target_ups, loss_func)
         elif "NVIL" in estimator_name:
             baseline_vals_ups = baseline_net.forward(x_ups)
-            estimator_ups = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
+            estimator_ups, _ = NVIL(probs_logits_ups, target_ups, baseline_vals_ups, loss_func)
         elif "CONCRETE" in estimator_name:
             estimator_ups = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator_ups = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
+            estimator_ups, _ = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
         elif "RELAX" in estimator_name:
-            estimator_ups = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
+            estimator_ups, _ = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
         estimator_ups.sum().backward()
         # retrieve gradient of estimator [FIXED_BATCH, L]
         g_estimator = probs_logits_ups.grad

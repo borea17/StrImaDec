@@ -30,7 +30,7 @@ def build_experimental_setup(estimator_name, target, num_epochs, SEED):
         "num_epochs": num_epochs,
         "batch_size": 1,
         "lr": 0.01,
-        "loss_func": lambda x, y: (x - y) ** 2,
+        "loss_func": lambda x, y: (1 / num_classes) * (x - y) ** 2,
         "estimator_name": estimator_name,
         "FIXED_BATCH": 1000,
     }

@@ -26,4 +26,4 @@ def REINFORCE(probs_logits, target, loss_func):
     loss = loss_func(sampled_class, target)
     # compute estimator [batch, L]
     estimator = loss.detach() * categorical_dist.log_prob(sampled_indices).unsqueeze(1)
-    return estimator.sum(1)
+    return estimator.sum(1), loss.sum(1)

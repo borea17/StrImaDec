@@ -11,12 +11,16 @@ class VAE(nn.Module):
 
     Args:
         config (dict): dictionary containing the following configurations
-            in_channels (int): number of image channels
+            img_channels (int): number of image channels
             img_dim (int): image dimension along one axis (assumed to be square)
             FC_hidden_dims_enc (list of ints): hidden dimensions of encoder
             FC_hidden_dims_dec (list of ints): hidden dimensions of decoder
             latent_dim (int): dimension of latent space
-
+            encoder_distribution (str): encoding distribution ["Gaussian", "Categorical"]
+            decoder_distribution (str): decoding distribution ["Gaussian", "Bernoulli"]
+            ################## DEPENDENT ARGS ##################
+            decoder_distribution == "GAUSSIAN":
+                fixed_var (float): assumed variance of decoder distribution
     Attributes:
         encoder (nn.Sequential): encoder network
         decoder (nn.Sequential): decoder network
@@ -38,7 +42,7 @@ class VAE(nn.Module):
         # parse config
         FC_hidden_dims_enc = config["FC_hidden_dims_enc"]
         FC_hidden_dims_dec = config["FC_hidden_dims_dec"]
-        self.img_dim, self.img_channels = config["img_dim"], config["in_channels"]
+        self.img_dim, self.img_channels = config["img_dim"], config["img_channels"]
         self.encoder_distribution = config["encoder_distribution"]
         self.decoder_distribution = config["decoder_distribution"]
         self.latent_dim = config["latent_dim"]
@@ -53,7 +57,6 @@ class VAE(nn.Module):
         # define output_dim of encoder
         if self.encoder_distribution == "Gaussian":
             output_dim_enc = 2 * self.latent_dim
-            self.fixed_var = config["fixed_var"]
         elif self.encoder_distribution == "Categorical":
             output_dim_enc = self.latent_dim
         # build encoder network
@@ -63,21 +66,23 @@ class VAE(nn.Module):
         for i in range(1, len(FC_hidden_dims_enc)):
             FC_layers_encoder.append(nn.Linear(FC_hidden_dims_enc[i - 1], FC_hidden_dims_enc[i]))
             FC_layers_encoder.append(nn.ReLU())
-        FC_layers_encoder.append(nn.Linear(FC_layers_encoder[-1], output_dim_enc))
+        FC_layers_encoder.append(nn.Linear(FC_hidden_dims_enc[-1], output_dim_enc))
         self.encoder = nn.Sequential(*FC_layers_encoder)
         # build decoder network
         FC_layers_decoder = nn.ModuleList(
             [nn.Linear(self.latent_dim, FC_hidden_dims_dec[0]), nn.ReLU()]
         )
         for i in range(1, len(FC_hidden_dims_dec)):
-            FC_layers_decoder.append(
-                nn.Linear(FC_hidden_dims_dec[i - 1], nn.Linear(FC_hidden_dims_dec[i]))
-            )
+            FC_layers_decoder.append(nn.Linear(FC_hidden_dims_dec[i - 1], FC_hidden_dims_dec[i]))
             FC_layers_decoder.append(nn.ReLU())
         FC_layers_decoder.append(nn.Linear(FC_hidden_dims_dec[-1], input_size))
         if self.decoder_distribution == "Bernoulli":
             FC_layers_decoder.append(nn.Sigmoid())
+        elif self.decoder_distribution == "Gaussian":
+            self.fixed_var = config["fixed_var"]
         self.decoder = nn.Sequential(*FC_layers_decoder)
+        # define example input shape
+        self.example_input_shape = [64, self.img_channels, self.img_dim, self.img_dim]
         return
 
     def forward(self, x):
@@ -93,10 +98,14 @@ class VAE(nn.Module):
             results["mu_E"], results["log_var_E"], results["z"] = mu_E, log_var_E, z
         elif self.encoder_distribution == "Categorical":
             probs_logits = alpha
-            z = dists.Categorical(logits=probs_logits)
+            # sample one-hot vector indices
+            z_ind = dists.Categorical(logits=probs_logits).sample()
+            # convert to one-hot vectors
+            num_classes = probs_logits.shape[1]
+            z = torch.nn.functional.one_hot(z_ind, num_classes=num_classes).type_as(probs_logits)
             results["probs_logits"], results["z"] = probs_logits, z
         # get reconstruction
-        x_tilde = self.decoder(z)
+        x_tilde = self.decode(z)
         results["x_tilde"] = x_tilde
         return results
 
@@ -107,10 +116,15 @@ class VAE(nn.Module):
 
     def decode(self, z):
         # get decoder distribution parameters and reshape to [batch, img_channels, img_dim, img_dim]
-        x_tilde = self.decoder(z).view(-1, self.img_channels, self.img_dim, self.img_dim)
+        x_dec = self.decoder(z)
+        if len(z.shape) == 2:
+            x_tilde = x_dec.view(-1, self.img_channels, self.img_dim, self.img_dim)
+        elif len(z.shape) == 3:  # this is only here for analytical loss computation
+            batch_size = z.shape[0]
+            x_tilde = x_dec.view(batch_size, -1, self.img_channels, self.img_dim, self.img_dim)
         if self.decoder_distribution == "Gaussian":
             # force output to be positive (EPS for numerical stability)
             pass
             # EPS = 1e-32
-            # x_tilde_att_i = (x_tilde_att_i + EPS).abs()
+            # x_tilde = (x_tilde + EPS).abs()
         return x_tilde

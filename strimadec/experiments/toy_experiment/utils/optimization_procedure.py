@@ -26,7 +26,7 @@ def run_stochastic_optimization(params):
             FIXED_BATCH (int): used to obtain a good estimate for the variance of the estimator
             ################## DEPENDENT PARAMS ##################
             estimator_name == "CONCRETE":
-                temp (float): temperature of concrete distribution in log units [1]
+                temp (float): temperature of concrete distribution
             estimator_name == "NVIL":
                 baseline_net (nn.Sequential): neural baseline network
             estimator_name == "REBAR":

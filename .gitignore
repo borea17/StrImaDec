@@ -6,7 +6,6 @@ __pycache__/
 # C extensions
 *.so
 
-venv2/
 results/
 DVAE/
 data/

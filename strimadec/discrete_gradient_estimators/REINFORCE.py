@@ -22,8 +22,8 @@ def REINFORCE(probs_logits, target, loss_func):
     # cast to one-hot vectors [batch, L]
     num_classes = probs_logits.shape[1]
     sampled_class = F.one_hot(sampled_indices, num_classes=num_classes).type_as(probs_logits)
-    # compute loss [batch, L]
+    # compute loss [batch]
     loss = loss_func(sampled_class, target)
-    # compute estimator [batch, L]
-    estimator = loss.detach() * categorical_dist.log_prob(sampled_indices).unsqueeze(1)
-    return estimator.sum(1), loss.sum(1)
+    # compute estimator [batch]
+    estimator = loss.detach() * categorical_dist.log_prob(sampled_indices)
+    return estimator, loss

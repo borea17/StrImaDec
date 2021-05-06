@@ -1,6 +1,11 @@
 import torch
 
 
+def loss_func(x, y):
+    num_classes = y.shape[-1]
+    return (1 / num_classes) * ((x - y) ** 2).sum(axis=-1)
+
+
 def build_experimental_setup(estimator_name, target, num_epochs, SEED):
     """
         creates the experimental setup params given the estimator_name
@@ -30,7 +35,8 @@ def build_experimental_setup(estimator_name, target, num_epochs, SEED):
         "num_epochs": num_epochs,
         "batch_size": 1,
         "lr": 0.01,
-        "loss_func": lambda x, y: (1 / num_classes) * (x - y) ** 2,
+        # "loss_func": lambda x, y: (1 / num_classes) * (x - y) ** 2,
+        "loss_func": loss_func,
         "estimator_name": estimator_name,
         "FIXED_BATCH": 1000,
     }

@@ -30,7 +30,7 @@ def run_stochastic_optimization(params):
             estimator_name == "NVIL":
                 baseline_net (nn.Sequential): neural baseline network
             estimator_name == "REBAR":
-                eta (nn.Parameter): tuneable hyperparameter that scales control variate [1]
+                eta (float): hyperparameter that scales control variate [1]
                 log_temp (nn.Parameter): tuneable hyperparameter (temperature of concrete) [1]
             estimator_name == "RELAX":
                 c_phi (nn.Sequential): neural network that takes relaxed & conditioned relaxed input
@@ -119,7 +119,7 @@ def run_stochastic_optimization(params):
         # get batch_size one-hot vectors [1, L, L]
         one_hot_vectors = torch.eye(probs.shape[1]).unsqueeze(0).to(probs.device)
         # compute loss for each one_hot_vector [1, L]
-        loss_per_one_hot = params["loss_func"](one_hot_vectors, target.unsqueeze(1)).sum(2)
+        loss_per_one_hot = params["loss_func"](one_hot_vectors, target.unsqueeze(1))
         # compute expected loss by multiplying with probs
         expected_loss = (probs * loss_per_one_hot).sum()
         expected_losses[epoch] = expected_loss.item()
@@ -152,7 +152,7 @@ def run_stochastic_optimization(params):
         possible_losses = torch.zeros(num_classes)
         for class_ind in range(num_classes):
             one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
-            possible_losses[class_ind] = loss_func(one_hot_class, target).sum()
+            possible_losses[class_ind] = loss_func(one_hot_class, target)
         optimal_loss = min(possible_losses)
         assert (optimal_loss - expected_loss) ** 2 < 1e-6, "analytical solution seems to be wrong"
     results = {

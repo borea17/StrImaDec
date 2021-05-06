@@ -11,41 +11,52 @@ def REBAR(probs_logits, target, temp, eta, loss_func):
         temp and eta are optimized to reduce the variance
 
     Args:
-        probs (tensor): categorical probabilities [batch, L]
-        target (tensor): target tensor [batch, L]
+        probs_logits (tensor): categorical probabilities [batch, L]
+        target (tensor): target tensor [batch, L] or [batch, img_channels, img_dim, img_dim]
         temp (tensor): temperature (tuneable) to use for the concrete distribution [1]
-        eta (tensor): hyperparamer that scales the control variate [1]
+        eta (float): hyperparamer that scales the control variate
         loss_func (method): loss function that takes the sampled class vectors as input
 
     Returns:
         estimator (tensor): batch-wise loss (including variance loss) [batch]
     """
-    # compute log probabilities and probabilities
-    log_probs = F.log_softmax(probs_logits, dim=1)
-    probs = F.softmax(probs_logits, dim=1)
-    # sample unit noise u, v (exclude 0, since log won't work otherwise)
+    # compute log probabilities and probabilities [batch, L] (use EPS for numerical stability)
+    EPS = 1e-9
+    probs = F.softmax(probs_logits, dim=1).clamp(min=EPS, max=1 - EPS)
+    log_probs = probs.log()
+    # sample unit noise u, v (exclude 0, since log won't work otherwise) [batch, L]
     u = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
     v = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
-    # convert u to u_Gumbel
+    # convert u to u_Gumbel [batch, L]
     u_Gumbel = -torch.log(-torch.log(u))
-    # Gumbel Max Trick to obtain discrete latent p(z|x)
+    # Gumbel Max Trick to obtain discrete latent p(z|x) [batch, L]
     z_ind = (log_probs + u_Gumbel).argmax(1)
-    z = F.one_hot(z_ind, num_classes=log_probs.shape[1]).type_as(log_probs)
-    # Gumbel Softmax to obtain relaxed latent p(z_tilde|x)
+    z = F.one_hot(z_ind, num_classes=log_probs.shape[1]).type_as(log_probs).detach()
+    # Gumbel Softmax to obtain relaxed latent p(z_tilde|x) [batch, L]
     z_tilde = torch.softmax((log_probs + u_Gumbel) / temp, dim=1)
     # sample s_tilde from p(s_tilde|z), see appendix D of Tucker et al. 2017
-    v_b = v[torch.arange(probs.shape[0]), z_ind].unsqueeze(1)
-    v_Gumbel = -torch.log(-torch.log(v))
-    v_prime = -torch.log(-(torch.log(v) / probs) - torch.log(v_b))
-    v_prime[torch.arange(probs.shape[0]), z_ind] = v_Gumbel[torch.arange(probs.shape[0]), z_ind]
+    v_Gumbel = -torch.log(-torch.log(v))  # b =1
+    v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
+    v_prime = (1. - z) * v_nonGumbel + z * v_Gumbel
     s_tilde = torch.softmax(v_prime / temp, dim=1)
     # compute REBAR estimator (evaluate loss_func at discrete, relaxed & conditioned relaxed input)
-    f_z = loss_func(z, target)
-    f_z_tilde = loss_func(z_tilde, target)
-    f_s_tilde = loss_func(s_tilde, target)
-    log_prob = dists.Categorical(probs=probs).log_prob(z_ind).unsqueeze(1)
-    # compute gradient estimator (detach eta and temp such that backward won't affect those)
-    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (f_z_tilde - f_s_tilde).detach()
+    f_z = loss_func(z, target)  # [batch]
+    f_z_tilde = loss_func(z_tilde, target)  # [batch]
+    f_s_tilde = loss_func(s_tilde, target)  # [batch]
+    z_tilde_detach_temp = torch.softmax((log_probs + u_Gumbel) / temp.detach(), dim=1)
+    s_tilde_detach_temp = torch.softmax(v_prime / temp.detach(), dim=1)
+    f_z_tilde_detach_temp = loss_func(z_tilde_detach_temp, target)
+    f_s_tilde_detach_temp = loss_func(s_tilde_detach_temp, target)
+    z_tilde_detach_probs = torch.softmax((log_probs.detach() + u_Gumbel) / temp, dim=1)
+    s_tilde_detach_probs = torch.softmax(v_prime.detach() / temp, dim=1)
+    f_z_tilde_detach_probs = loss_func(z_tilde_detach_probs, target)
+    f_s_tilde_detach_probs = loss_func(s_tilde_detach_probs, target)
+    log_prob = dists.Categorical(probs=probs).log_prob(z_ind)  # [batch]
+    # compute gradient estimator (detach temp such that backward won't affect it)
+    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (
+        f_z_tilde_detach_temp - f_s_tilde_detach_temp
+    )
+    # estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (f_z_tilde - f_s_tilde)
     # compute variance estimator (use partial derivatives for the sake of clarity)
     g_log_prob = grad(
         log_prob,
@@ -69,9 +80,11 @@ def REBAR(probs_logits, target, temp, eta, loss_func):
         retain_graph=True,
     )[0]
     # compute gradient estimator as a function of eta and temp [batch, L]
-    g_estimator = (f_z - eta * f_s_tilde) * g_log_prob + eta * (g_f_z_tilde - g_f_s_tilde)
-    # compute variance estimator [batch, L]
-    var_estimator = g_estimator ** 2
-    # # backward through var estimator to optimize eta and temp
-    # var_estimator.backward(create_graph=True)
-    return estimator.sum(1) + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z.sum(1)
+    g_estimator = (
+        (f_z - eta * f_s_tilde_detach_probs).unsqueeze(1) * g_log_prob.detach() + eta * (g_f_z_tilde - g_f_s_tilde)
+    )
+    # compute variance estimator [batch, L] (use EPS for numerical stability)
+    var_estimator = (g_estimator ** 2).clamp(min=EPS)
+    # return estimator + var_estimator.sum(1), f_z
+    # return estimator + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z
+    return estimator, f_z

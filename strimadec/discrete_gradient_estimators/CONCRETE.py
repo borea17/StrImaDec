@@ -19,6 +19,6 @@ def CONCRETE(probs_logits, target, temp, loss_func):
     concrete_dist = dists.RelaxedOneHotCategorical(temperature=temp, logits=probs_logits)
     # sample from concrete distribution with reparam trick [batch, L]
     continuous_samples = concrete_dist.rsample()
-    # evaluate the loss_func at the continuous samples [batch, L]
+    # evaluate the loss_func at the continuous samples [batch]
     continuous_loss = loss_func(continuous_samples, target)
-    return continuous_loss.sum(1)
+    return continuous_loss

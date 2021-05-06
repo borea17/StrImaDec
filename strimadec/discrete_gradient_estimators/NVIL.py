@@ -24,10 +24,10 @@ def NVIL(probs_logits, target, baseline_vals, loss_func):
     # cast to one-hot vectors [batch, L]
     num_classes = probs_logits.shape[1]
     sampled_class = F.one_hot(sampled_indices, num_classes=num_classes).type_as(probs_logits)
-    # compute loss [batch, L] and loss_with_control_variate [batch, L]
+    # compute loss [batch] and loss_with_control_variate [batch]
     loss = loss_func(sampled_class, target)
     loss_with_control_variate = (loss - baseline_vals).detach()
-    # compute estimator [batch, L]
-    estimator = loss_with_control_variate * categorical_dist.log_prob(sampled_indices).unsqueeze(1)
+    # compute estimator [batch]
+    estimator = loss_with_control_variate * categorical_dist.log_prob(sampled_indices)
     baseline_loss = (loss.detach() - baseline_vals).pow(2)
-    return estimator.sum(1) + baseline_loss.sum(1) - baseline_loss.detach().sum(1), loss.sum(1)
+    return estimator + baseline_loss - baseline_loss.detach(), loss

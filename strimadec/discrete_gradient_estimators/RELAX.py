@@ -29,20 +29,30 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     u_Gumbel = -torch.log(-torch.log(u))
     # Gumbel Max Trick to obtain discrete latent p(z|x)
     z_ind = (log_probs + u_Gumbel).argmax(1)
-    z = F.one_hot(z_ind, num_classes=log_probs.shape[1]).type_as(log_probs)
+    z = F.one_hot(z_ind, num_classes=log_probs.shape[1]).type_as(log_probs).detach()
     # generate z_tilde
     z_tilde = c_phi(log_probs + u_Gumbel)
     # sample s_tilde from p(s_tilde|z), see appendix D of Tucker et al. 2017
-    v_b = v[torch.arange(probs.shape[0]), z_ind].unsqueeze(1)
-    v_Gumbel = -torch.log(-torch.log(v))
-    v_prime = -torch.log(-(torch.log(v) / probs) - torch.log(v_b))
-    v_prime[torch.arange(probs.shape[0]), z_ind] = v_Gumbel[torch.arange(probs.shape[0]), z_ind]
+
+    # v_Gumbel = -torch.log(-torch.log(v))  # b =1
+    # v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
+    # v_prime = (1.-z)*v_nonGumbel + z*v_Gumbel
+
+    v_Gumbel = -torch.log(-torch.log(v))  # b =1
+    topgumbels = v_Gumbel + torch.logsumexp(log_probs, axis=1, keepdims=True)
+    topgumbel = torch.sum(z*topgumbels, axis=-1, keepdims=True)
+    def truncated_gumbel(gumbel, truncation):
+        EPSILON = 1e-16 
+        return -torch.log(EPSILON + torch.exp(-gumbel) + torch.exp(-truncation))
+    truncgumbel = truncated_gumbel(v_Gumbel + log_probs, topgumbel)
+
+    v_prime = (1. - z)*truncgumbel + z*topgumbels
     s_tilde = c_phi(v_prime)
     # compute RELAX estimator (evaluate loss at discrete, relaxed & conditioned relaxed input)
-    f_z = loss_func(z, target)
-    f_z_tilde = loss_func(z_tilde, target)
-    f_s_tilde = loss_func(s_tilde, target)
-    log_prob = dists.Categorical(probs=probs).log_prob(z_ind).unsqueeze(1)
+    f_z = loss_func(z, target)  # [batch]
+    f_z_tilde = loss_func(z_tilde, target)  # [batch]
+    f_s_tilde = loss_func(s_tilde, target)  # [batch]
+    log_prob = dists.Categorical(probs=probs).log_prob(z_ind)  # [batch]
     # compute gradient estimator (detach c_phi such that backward won't affect it)
     estimator = (f_z - f_s_tilde).detach() * log_prob + f_z_tilde.detach() - f_s_tilde.detach()
     # compute variance estimator (use partial derivatives for the sake of clarity)
@@ -68,7 +78,7 @@ def RELAX(probs_logits, target, c_phi, loss_func):
         retain_graph=True,
     )[0]
     # compute gradient estimator as a function of eta and temp [batch, L]
-    g_estimator = (f_z - f_s_tilde) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
+    g_estimator = (f_z - f_s_tilde).unsqueeze(1) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
     # compute variance estimator [batch, L]
     var_estimator = g_estimator ** 2
-    return estimator.sum(1) + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z.sum(1)
+    return estimator + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z

@@ -18,7 +18,7 @@ def analytical(probs_logits, target, loss_func):
     # get batch_size one-hot vectors [batch, L, L]
     one_hot_vectors = torch.eye(probs.shape[1]).unsqueeze(0).repeat(probs.shape[0], 1, 1)
     # compute loss for each one_hot_vector [batch, L]
-    loss_per_one_hot = loss_func(one_hot_vectors.to(probs.device), target.unsqueeze(1)).sum(2)
+    loss_per_one_hot = loss_func(one_hot_vectors.to(probs.device), target.unsqueeze(1))
     # compute expected loss by multiplying with probs [batch]
     expected_loss = (probs * loss_per_one_hot).sum(1)
     return expected_loss

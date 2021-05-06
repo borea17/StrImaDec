@@ -1,13 +1,15 @@
+from importlib.metadata import requires
 import pytorch_lightning as pl
 import torch
+import torch.nn as nn
 import torch.distributions as dists
 import numpy as np
 import torchvision as tv
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-from strimadec.models.modules import VAE
-from strimadec.models.utils import DVAE_LossModel, accuracy, compute_accuracy
+from strimadec.models.modules import VAE, BaselineNet
+from strimadec.models.utils import DVAE_LossModel, compute_accuracy
 from strimadec.datasets import MNIST
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
@@ -30,9 +32,21 @@ class DVAE(pl.LightningModule):
             estimator_name == "NVIL":
                 tune_lr (float): learning rate for baseline network parameters (ADAM)
                 tune_weight_decay (float): weight_decay for baseline network parameters (ADAM)
+                Baseline-Setup (dict): dictionary containing the setup of the neural baseline
             estimator_name == "CONCRETE":
                 lambda_1 (float): temperature of concrete distribution [latent dist]
                 lambda_2 (float): temperature of concrete distribution [latent prior dist]
+            estimator_name == "REBAR":
+                tune_lr (float): learning rate for baseline network parameters (ADAM)
+                tune_weight_decay (float): weight_decay for baseline network parameters (ADAM)
+                eta (float): hyperparameter that scales control variate [1]
+                log_temp_init (float): tuneable hyperparameter (temperature of concrete) [1]
+            estimator_name == "RELAX":
+                tune_lr (float): learning rate for baseline network parameters (ADAM)
+                tune_weight_decay (float): weight_decay for baseline network parameters (ADAM)
+                C_PHI-Setup (dict): dictionary containing the setup of C_PHI network
+
+
     """
 
     def __init__(self, config) -> None:
@@ -54,9 +68,23 @@ class DVAE(pl.LightningModule):
         if self.estimator_name in ["NVIL", "REBAR", "RELAX"]:
             self.tune_lr = config["tune_lr"]
             self.tune_weight_decay = config["tune_weight_decay"]
+        else:
+            self.tuneable_hyperparameters = []
+        # estimator dependent parsing
         if self.estimator_name == "CONCRETE":
             self.register_buffer("lambda_1", torch.tensor(config["lambda_1"]))
             self.register_buffer("lambda_2", torch.tensor(config["lambda_1"]))
+        elif self.estimator_name == "NVIL":
+            self.baseline_net = BaselineNet(config["Baseline-Setup"])
+            self.tuneable_hyperparameters = self.baseline_net.parameters()
+        elif self.estimator_name == "REBAR":
+            self.eta = config["eta"]
+            self.log_temp = nn.Parameter(torch.tensor(config["log_temp_init"]), requires_grad=True)
+            # self.tuneable_hyperparameters = [self.log_temp]
+            self.tuneable_hyperparameters = []
+        elif self.estimator_name == "RELAX":
+            self.c_phi = BaselineNet(config["C_PHI-Setup"])
+            self.tuneable_hyperparameters = self.c_phi.parameters()
         # input and output sizes infered by pytorch lightning
         self.example_input_array = torch.Tensor(*self.model.VAE.example_input_shape)
         return
@@ -111,7 +139,8 @@ class DVAE(pl.LightningModule):
             NLL = CONCRETE(probs_logits, x, self.lambda_1, loss_func)
             NLL_estimator = torch.tensor(0.0).type(NLL.dtype)
         elif self.estimator_name == "REBAR":
-            NLL_estimator, NLL = REBAR(probs_logits, x, self.log_temp.exp(), self.eta, loss_func)
+            eta, temp = self.eta, self.log_temp.exp()
+            NLL_estimator, NLL = REBAR(probs_logits, x, temp, eta, loss_func)
         elif self.estimator_name == "RELAX":
             NLL_estimator, NLL = RELAX(probs_logits, x, self.c_phi, loss_func)
         losses_dict = {"KL-Div": KL_Div, "NLL": NLL, "NLL_estimator": NLL_estimator}
@@ -124,18 +153,16 @@ class DVAE(pl.LightningModule):
         losses = self.compute_loss(x)
         KL_Div, NLL, NLL_estimator = losses["KL-Div"], losses["NLL"], losses["NLL_estimator"]
         loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach()).mean()
-        # actual training step, i.e., backpropagation
-        optimizer = self.optimizers()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
         # log losses
         self.log("losses/loss", loss, on_step=False, on_epoch=True)
         self.log("losses/KL-Div", KL_Div.mean(), on_step=False, on_epoch=True)
         self.log("losses/NLL", NLL.mean(), on_step=False, on_epoch=True)
         self.log("losses/NLL_estimator", NLL_estimator.mean(), on_step=False, on_epoch=True)
-        # define training step output for faster computation of accuracy
-        training_step_output = {"x": x, "y": labels}
+        # special logs
+        if self.estimator_name == "REBAR":
+            self.log("params/temp", self.log_temp.exp(), on_step=False, on_epoch=True)
+        # define training step output for faster computation of accuracy and loss for backward
+        training_step_output = {"x": x, "y": labels, "loss": loss}
         return training_step_output
 
     def training_epoch_end(self, training_step_outputs):
@@ -187,21 +214,26 @@ class DVAE(pl.LightningModule):
     ######### TRAINING SETUP HOOKS #########
     ########################################
 
-    @property
-    def automatic_optimization(self) -> bool:
-        return False
-
     def configure_optimizers(self):
-        if self.estimator_name in ["REINFORCE", "CONCRETE", "Exact gradient"]:
+        if self.tuneable_hyperparameters:
             optimizer = torch.optim.Adam(
-                self.model.VAE.parameters(), lr=self.lr, weight_decay=self.weight_decay
+                [
+                    {
+                        "params": self.model.parameters(),
+                        "lr": self.lr,
+                        "weight_decay": self.weight_decay,
+                    },
+                    {
+                        "params": self.tuneable_hyperparameters,
+                        "lr": self.tune_lr,
+                        "weight_decay": self.tune_weight_decay,
+                    },
+                ]
             )
-        elif self.estimator_name == "NVIL":
-            pass
-        elif self.estimator_name == "REBAR":
-            pass
-        elif self.estimator_name == "RELAX":
-            pass
+        else:
+            optimizer = torch.optim.Adam(
+                self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            )
         return optimizer
 
     ########################################

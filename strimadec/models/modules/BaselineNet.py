@@ -31,12 +31,13 @@ class BaselineNet(nn.Module):
         if "log_temp_init" in config:
             log_temp_init = config["log_temp_init"]
             self.log_temp = torch.nn.Parameter(torch.tensor(log_temp_init), requires_grad=True)
+            self.contains_temp = True
         else:
-            self.log_temp = []
+            self.contains_temp = False
         return
 
     def forward(self, x):
-        if self.log_temp:
+        if self.contains_temp:
             temp = self.log_temp.exp()
             x = torch.softmax(x / temp, dim=1)
         out = self.baseline(x)

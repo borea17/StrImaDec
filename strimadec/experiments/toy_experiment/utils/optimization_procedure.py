@@ -6,6 +6,7 @@ from pytorch_lightning import seed_everything
 
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
+from strimadec.discrete_gradient_estimators.utils import set_requires_grad
 
 
 def run_stochastic_optimization(params):
@@ -61,11 +62,12 @@ def run_stochastic_optimization(params):
     elif "REBAR" in estimator_name:
         eta, log_temp = params["eta"], params["log_temp"]
         # simple `.to(device)` causes error on cuda due to `is_leaf` becoming `False`
-        # eta = eta.to(device).detach().requires_grad_(True)
         log_temp = log_temp.to(device).detach().requires_grad_(True)
+        model = encoder_net
         tuneable_params = [log_temp]
     elif "RELAX" in estimator_name:
         c_phi = params["c_phi"].to(device)
+        model = encoder_net
         tuneable_params = c_phi.parameters()
 
     if tuneable_params:  # define tuneable_params optimizer (if they exist)
@@ -100,13 +102,17 @@ def run_stochastic_optimization(params):
             estimator = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator, _ = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
+            estimator, _ = REBAR(probs_logits_ups, target_ups, temp, eta, model, loss_func)
         elif "RELAX" in estimator_name:
-            estimator, _ = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
+            estimator, _ = RELAX(probs_logits_ups, target_ups, c_phi, model, loss_func)
+            set_requires_grad(c_phi, False)  # do not update c_phi parameters in estimator backward
+
         estimator.sum().backward()
 
         optimizer.step()
         if tuneable_params:
+            if "RELAX" in estimator_name:
+                set_requires_grad(c_phi, False)  # update c_phi when calling tune optimizer step
             tune_optimizer.step()
 
         ################## TRACK METRICS ########################
@@ -139,14 +145,17 @@ def run_stochastic_optimization(params):
             estimator_ups = CONCRETE(probs_logits_ups, target_ups, params["temp"], loss_func)
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
-            estimator_ups, _ = REBAR(probs_logits_ups, target_ups, temp, eta, loss_func)
+            estimator_ups, _ = REBAR(probs_logits_ups, target_ups, temp, eta, model, loss_func)
         elif "RELAX" in estimator_name:
-            estimator_ups, _ = RELAX(probs_logits_ups, target_ups, c_phi, loss_func)
+            estimator_ups, _ = RELAX(probs_logits_ups, target_ups, c_phi, model, loss_func)
+
         estimator_ups.sum().backward()
         # retrieve gradient of estimator [FIXED_BATCH, L]
         g_estimator = probs_logits_ups.grad
         for class_ind in range(num_classes):
             vars_grad[epoch, class_ind] = g_estimator.var(dim=0)[class_ind].item()
+
+        print(c_phi.log_temp)
     if "Exact gradient" in estimator_name:
         # make sure that analytical estimator converges to true optimum by computing optimal loss
         possible_losses = torch.zeros(num_classes)

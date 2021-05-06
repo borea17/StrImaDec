@@ -3,8 +3,10 @@ import torch.distributions as dists
 import torch.nn.functional as F
 from torch.autograd import grad
 
+from strimadec.discrete_gradient_estimators.utils import set_requires_grad
 
-def RELAX(probs_logits, target, c_phi, loss_func):
+
+def RELAX(probs_logits, target, c_phi, model, loss_func):
     """
         computes the loss using the RELAX estimator (REBAR + NVIL)
         through which we can backpropagate, at the same time the network parameters
@@ -14,14 +16,16 @@ def RELAX(probs_logits, target, c_phi, loss_func):
         probs (tensor): categorical probabilities [batch, L]
         target (tensor): target tensor [batch, L]
         c_phi (nn.Sequential): neural control variate for RELAX
+        model (nn.Module): model parameters that should not be kept fixed when optimizing variance
         loss_func (method): loss function that takes the sampled class vectors as input
 
     Returns:
         estimator (tensor): batch-wise loss (including variance loss) [batch]
     """
-    # compute log probabilities and probabilities
-    log_probs = F.log_softmax(probs_logits, dim=1)
-    probs = F.softmax(probs_logits, dim=1)
+    # compute log probabilities and probabilities [batch, L] (use EPS for numerical stability)
+    EPS = 1e-16
+    probs = F.softmax(probs_logits, dim=1).clamp(min=EPS, max=1 - EPS)
+    log_probs = probs.log()
     # sample unit noise u, v (exclude 0, since log won't work otherwise)
     u = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
     v = torch.FloatTensor(*log_probs.shape).uniform_(1e-38, 1.0).to(probs_logits.device)
@@ -33,20 +37,9 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     # generate z_tilde
     z_tilde = c_phi(log_probs + u_Gumbel)
     # sample s_tilde from p(s_tilde|z), see appendix D of Tucker et al. 2017
-
-    # v_Gumbel = -torch.log(-torch.log(v))  # b =1
-    # v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
-    # v_prime = (1.-z)*v_nonGumbel + z*v_Gumbel
-
     v_Gumbel = -torch.log(-torch.log(v))  # b =1
-    topgumbels = v_Gumbel + torch.logsumexp(log_probs, axis=1, keepdims=True)
-    topgumbel = torch.sum(z*topgumbels, axis=-1, keepdims=True)
-    def truncated_gumbel(gumbel, truncation):
-        EPSILON = 1e-16 
-        return -torch.log(EPSILON + torch.exp(-gumbel) + torch.exp(-truncation))
-    truncgumbel = truncated_gumbel(v_Gumbel + log_probs, topgumbel)
-
-    v_prime = (1. - z)*truncgumbel + z*topgumbels
+    v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
+    v_prime = (1.0 - z) * v_nonGumbel + z * v_Gumbel
     s_tilde = c_phi(v_prime)
     # compute RELAX estimator (evaluate loss at discrete, relaxed & conditioned relaxed input)
     f_z = loss_func(z, target)  # [batch]
@@ -81,4 +74,8 @@ def RELAX(probs_logits, target, c_phi, loss_func):
     g_estimator = (f_z - f_s_tilde).unsqueeze(1) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
     # compute variance estimator [batch, L]
     var_estimator = g_estimator ** 2
-    return estimator + var_estimator.sum(1) - var_estimator.detach().sum(1), f_z
+    # obtain only gradients for c_phi (fix model parameters)
+    set_requires_grad(model, False)
+    var_estimator.sum(1).mean().backward(retain_graph=True)
+    set_requires_grad(model, True)
+    return estimator, f_z

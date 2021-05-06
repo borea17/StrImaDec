@@ -13,6 +13,7 @@ from strimadec.models.utils import DVAE_LossModel, compute_accuracy
 from strimadec.datasets import MNIST
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
+from strimadec.discrete_gradient_estimators.utils import set_requires_grad
 
 
 class DVAE(pl.LightningModule):
@@ -80,8 +81,7 @@ class DVAE(pl.LightningModule):
         elif self.estimator_name == "REBAR":
             self.eta = config["eta"]
             self.log_temp = nn.Parameter(torch.tensor(config["log_temp_init"]), requires_grad=True)
-            # self.tuneable_hyperparameters = [self.log_temp]
-            self.tuneable_hyperparameters = []
+            self.tuneable_hyperparameters = [self.log_temp]
         elif self.estimator_name == "RELAX":
             self.c_phi = BaselineNet(config["C_PHI-Setup"])
             self.tuneable_hyperparameters = self.c_phi.parameters()
@@ -140,19 +140,32 @@ class DVAE(pl.LightningModule):
             NLL_estimator = torch.tensor(0.0).type(NLL.dtype)
         elif self.estimator_name == "REBAR":
             eta, temp = self.eta, self.log_temp.exp()
-            NLL_estimator, NLL = REBAR(probs_logits, x, temp, eta, loss_func)
+            NLL_estimator, NLL = REBAR(probs_logits, x, temp, eta, self.model, loss_func)
         elif self.estimator_name == "RELAX":
-            NLL_estimator, NLL = RELAX(probs_logits, x, self.c_phi, loss_func)
+            NLL_estimator, NLL = RELAX(probs_logits, x, self.c_phi, self.model, loss_func)
         losses_dict = {"KL-Div": KL_Div, "NLL": NLL, "NLL_estimator": NLL_estimator}
         return losses_dict
 
     def training_step(self, batch, batch_idx):
         """the actual training step of the model happens here"""
+        optimizer = self.optimizers()
+        optimizer.zero_grad()
         x, labels = batch  # labels are only used for logging
         # loss computation
         losses = self.compute_loss(x)
+        # model_params = list(self.model.VAE.parameters())
         KL_Div, NLL, NLL_estimator = losses["KL-Div"], losses["NLL"], losses["NLL_estimator"]
+        # compute loss and exclude surrogate NLL_estimator loss in numerical representation
         loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach()).mean()
+        # actual training step, i.e., backpropagation
+        if self.estimator_name == "RELAX":  # fix c_phi for estimator backward
+            set_requires_grad(self.c_phi, False)
+
+        self.manual_backward(loss, optimizer)
+
+        if self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
+            set_requires_grad(self.c_phi, True)
+        optimizer.step()
         # log losses
         self.log("losses/loss", loss, on_step=False, on_epoch=True)
         self.log("losses/KL-Div", KL_Div.mean(), on_step=False, on_epoch=True)
@@ -161,7 +174,9 @@ class DVAE(pl.LightningModule):
         # special logs
         if self.estimator_name == "REBAR":
             self.log("params/temp", self.log_temp.exp(), on_step=False, on_epoch=True)
-        # define training step output for faster computation of accuracy and loss for backward
+        elif self.estimator_name == "RELAX":
+            self.log("params/c_phi_temp", self.c_phi.log_temp.exp(), on_step=False, on_epoch=True)
+        # define training step output for faster computation of accuracy
         training_step_output = {"x": x, "y": labels, "loss": loss}
         return training_step_output
 
@@ -213,6 +228,10 @@ class DVAE(pl.LightningModule):
     ########################################
     ######### TRAINING SETUP HOOKS #########
     ########################################
+
+    @property
+    def automatic_optimization(self):
+        return False
 
     def configure_optimizers(self):
         if self.tuneable_hyperparameters:

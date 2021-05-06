@@ -11,7 +11,7 @@ def run_experiment():
     estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
     estimator_name = "REINFORCE"
     estimator_name = "REBAR"
-    # estimator_name = "RELAX"
+    estimator_name = "RELAX"
     decoder_distribution = "Gaussian"
     config = build_config(dataset_name, estimator_name, decoder_distribution)
     # make experiment reproducible
@@ -71,13 +71,13 @@ def build_config(dataset_name, estimator_name, decoder_distribution):
         config["tune_lr"] = 0.01
         config["tune_weight_decay"] = 1e-7
     elif estimator_name == "REBAR":
-        config["tune_lr"] = 1e-6 
-        config["tune_weight_decay"] = 1e-7
+        config["tune_lr"] = 1e-4
+        config["tune_weight_decay"] = 1e-6
         config["eta"] = 1.0
-        config["log_temp_init"] = -2.0
+        config["log_temp_init"] = 0.0
         config["VAE-Setup"]["fixed_var"] = 0.1
     elif estimator_name == "RELAX":
-        config["tune_lr"] = 0.1
+        config["tune_lr"] = 1e-4
         config["tune_weight_decay"] = 1e-6
         config["C_PHI-Setup"] = {
             "input_dim": 3,

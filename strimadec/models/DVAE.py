@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.distributions as dists
 import numpy as np
 import torchvision as tv
-from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 from strimadec.models.modules import VAE, BaselineNet
@@ -55,6 +54,8 @@ class DVAE(pl.LightningModule):
         assert (
             config["VAE-Setup"]["encoder_distribution"] == "Categorical"
         ), "The encoding distribution needs to be set to `Categorical` for the DVAE"
+        # # possible implementation error validation error in validation of Categorical distribution
+        # dists.Distribution.set_default_validate_args(False)  # do not validate parameters
         # parse config
         discrete_VAE = VAE(config["VAE-Setup"])
         self.estimator_name, self.dataset_name = config["estimator_name"], config["dataset_name"]
@@ -85,7 +86,7 @@ class DVAE(pl.LightningModule):
             self.c_phi = BaselineNet(config["C_PHI-Setup"])
             self.tuneable_hyperparameters = self.c_phi.parameters()
         # input and output sizes infered by pytorch lightning
-        self.example_input_array = torch.Tensor(*self.model.VAE.example_input_shape)
+        self.example_input_array = torch.zeros(*self.model.VAE.example_input_shape)
         return
 
     def forward(self, x):
@@ -160,7 +161,7 @@ class DVAE(pl.LightningModule):
         if self.estimator_name == "RELAX":  # fix c_phi for estimator backward
             set_requires_grad(self.c_phi, False)
 
-        self.manual_backward(loss, optimizer)
+        loss.backward()
 
         if self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
             set_requires_grad(self.c_phi, True)

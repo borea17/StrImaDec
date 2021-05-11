@@ -3,6 +3,7 @@ import pathlib
 
 import torch
 import numpy as np
+from prettytable import PrettyTable
 
 from strimadec.experiments.toy_experiment.utils import (
     run_stochastic_optimization,
@@ -17,13 +18,14 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
         used to compare the different discrete gradient estimators
 
     Args:
-        run (bool): decides whether experiment is executed or stored results are used
+        train (bool): decides whether experiment is executed or stored results are used
+        num_epochs (int): number of epochs to train each estimator
+        num_repetitions (int): number of repetitions for each estimator experiment
     """
     target = torch.tensor([0.34, 0.33, 0.33]).unsqueeze(0)
     estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
-    store_path = f"{store_dir}/toy_experiment.npy"
     if train:  # run experiment and save results in file
         results = {}
         for i, estimator_name in enumerate(estimator_names):
@@ -46,13 +48,26 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
             # store current estimator results
             store_path = f"{store_dir}/toy_experiment_{estimator_name}.npy"
             np.save(store_path, results[estimator_name])
-        # store all results
-        np.save(store_path, results)
     else:  # load experimental results from file
-        results = np.load(store_path, allow_pickle=True).item()
+        results = {}
+        for i, estimator_name in enumerate(estimator_names):
+            store_path_estimator = f"{store_dir}/toy_experiment_{estimator_name}.npy"
+            estimator_results = np.load(store_path_estimator, allow_pickle=True).item()
+            results[estimator_name] = estimator_results
     # plot results and store them
     store_path_fig = f"{store_dir}/toy_experiment.pdf"
     plot_toy(results, store_path_fig)
+    # summarize computation times
+    table = PrettyTable(["gradient estimator", "avg step time [ms]", "avg total time [s]"])
+    for name_of_estimator, data_estimator in results.items():
+        table.add_row(
+            [
+                name_of_estimator,
+                np.round(1000 * data_estimator["elapsed_times"].mean(), 2),
+                np.round(data_estimator["elapsed_times"].sum(), 2),
+            ]
+        )
+    print(table)
     return
 
 

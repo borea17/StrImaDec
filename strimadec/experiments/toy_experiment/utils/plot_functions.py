@@ -10,10 +10,10 @@ def plot_toy(results, store_path_fig):
     colors = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "gray"]
     plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
     linestyles = 5 * ["solid"] + ["dashdot"]
-
-    colors = ["#1F77B4", "#2CA02C", "#D62728", "gray"]
-    plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
-    linestyles = 3 * ["solid"] + ["dashdot"]
+    if len(results) == 4:  # use same color scheme as Grathwohl et al. (2017) for replication exp.
+        colors = ["#1F77B4", "#2CA02C", "#D62728", "gray"]
+        plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
+        linestyles = 3 * ["solid"] + ["dashdot"]
 
     fontsize, labelsize = 13, 11
     fig = plt.figure(figsize=(14, 5))
@@ -33,7 +33,7 @@ def plot_toy(results, store_path_fig):
     ax.spines["top"].set_color("none")
     ax.tick_params(axis="both", which="major", labelsize=labelsize)
     # add legend
-    plt.legend(fontsize=fontsize)
+    plt.legend(loc=(0.5, 0.2), fontsize=fontsize)
 
     plt.subplot(1, 2, 2)
     for i, estimator_name in enumerate(results.keys()):

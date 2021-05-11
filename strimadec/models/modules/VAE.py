@@ -97,9 +97,11 @@ class VAE(nn.Module):
             z = mu_E + torch.exp(0.5 * log_var_E) * epsilon
             results["mu_E"], results["log_var_E"], results["z"] = mu_E, log_var_E, z
         elif self.encoder_distribution == "Categorical":
+            EPS = 1e-16  # numerical stability, avoid over-/underflow
             probs_logits = alpha
+            probs = torch.softmax(probs_logits, dim=1).clamp(min=EPS, max=1 - EPS)
             # sample one-hot vector indices
-            z_ind = dists.Categorical(logits=probs_logits).sample()
+            z_ind = dists.Categorical(probs=probs).sample()
             # convert to one-hot vectors
             num_classes = probs_logits.shape[1]
             z = torch.nn.functional.one_hot(z_ind, num_classes=num_classes).type_as(probs_logits)

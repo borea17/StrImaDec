@@ -1,42 +1,77 @@
-import pytorch_lightning as pl
-from pytorch_lightning import seed_everything
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
+import os
+import pathlib
+from strimadec.experiments.toy_experiment.utils import experimental_setup
 
-from strimadec.models import DVAE
-from strimadec.experiments.single_object_multi_class.utils import get_DVAE_config
+import tensorboard as tb
+import numpy as np
+
+from strimadec.experiments.single_object_multi_class.utils import run_single_experiment
 
 
-def run_experiment(estimator_name, num_epochs, ds_name, decoder_dist, num_clusters, SEED):
-    config = get_DVAE_config(ds_name, num_epochs, estimator_name, decoder_dist, num_clusters, SEED)
-    # make experiment reproducible
-    seed_everything(config["SEED"])
-    # instantiate model
-    model = DVAE(config)
-    # define logger
-    logger = TensorBoardLogger("DVAE", name=config["experiment_name"])
-    # define callback of model checkpoint
-    checkpoint_callback = ModelCheckpoint(period=1)
-    # initialize pytorch lightning trainer
-    trainer = pl.Trainer(
-        deterministic=True,
-        gpus=1,
-        track_grad_norm=2,
-        gradient_clip_val=0,  # don't clip
-        max_epochs=config["num_epochs"],
-        progress_bar_refresh_rate=20,
-        logger=logger,
-        callbacks=[checkpoint_callback],
-    )
-    # train model
-    trainer.fit(model)
-    return
+def run_experiment(train: bool, dataset_name: str, num_clusters, num_epochs, num_repetitions):
+    estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
+    # estimator_names = ["REBAR", "RELAX", "Exact gradient"]
+    # estimator_names = ["Exact gradient"]
+    # estimator_names = ["NVIL"]
+    MODEL_NAME, DECODER_DIST = "DVAE", "Gaussian"
+    if train:  # results can be visualized via `tensorboard --logdir DVAE_results`
+        for i, estimator_name in enumerate(estimator_names):
+            store_dir = pathlib.Path(__file__).resolve().parents[0]
+
+            ############################# TEMPORARY ##############################
+            # delete saved results
+            import shutil
+
+            experiment_name = f"{MODEL_NAME}_results/{dataset_name}_{DECODER_DIST}_{estimator_name}"
+            if os.path.exists(os.path.join(store_dir, experiment_name)):  # delete saved results
+                shutil.rmtree(os.path.join(store_dir, experiment_name))
+            ######################################################################
+
+            for i_experiment in range(num_repetitions):
+                print(f"Start {estimator_name}-estimator {i_experiment + 1}/{num_repetitions} ...")
+                SEED = i_experiment
+
+                # run single experiment (results are automatically stored by tensorboard)
+                run_single_experiment(
+                    model_name=MODEL_NAME,
+                    estimator_name=estimator_name,
+                    num_epochs=num_epochs,
+                    dataset_name=dataset_name,
+                    decoder_dist=DECODER_DIST,
+                    num_clusters=num_clusters,
+                    store_dir=store_dir,
+                    SEED=SEED,
+                )
+    else:  # load results from https://tensorboard.dev/experiment/WZ3OLy1LRemRXNkuECYY8A/
+        experiment_id = "WZ3OLy1LRemRXNkuECYY8A"
+        experiment = tb.data.experimental.ExperimentFromDev(experiment_id)
+        df = experiment.get_scalars()
+        for estimator_name in estimator_names:
+            experiment_name = f"{dataset_name}_{DECODER_DIST}_{estimator_name}"
+            estimator_df = df[df["run"].str.split("/").str[-2] == experiment_name]
+            accs = estimator_df[estimator_df["tag"] == "metrics/deterministic_accuracy"]
+
+            # convert into array [num_repetitions, num_epochs] (each estimator use the same epochs)
+            num_repetitions = len(estimator_df["run"].unique())
+            num_epochs = int(estimator_df[estimator_df["tag"] == "epoch"].value.max() + 1)
+            accs_array = np.zeros([num_repetitions, num_epochs])
+            for i_repetition in range(num_repetitions):
+                repetition_name = f"{experiment_name}/version_{i_repetition}"
+
+                accs_array[i_repetition, :] = accs[accs["run"] == repetition_name].value
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--load",
+        default=True,
+        action="store_false",
+        dest="train",
+        help="load results instead of actual training",
+    )
     parser.add_argument(
         "--num_epochs", default=150, action="store", type=int, help="number of epochs to train"
     )
@@ -46,22 +81,6 @@ if __name__ == "__main__":
         action="store",
         type=int,
         help="number of repetitions experiment shall be performed",
-    )
-    parser.add_argument(
-        "--estimator_name",
-        default="REINFORCE",
-        choices=["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"],
-        action="store",
-        type=str,
-        help="name of gradient estimator",
-    )
-    parser.add_argument(
-        "--decoder_dist",
-        default="Gaussian",
-        choices=["Gaussian", "Bernoulli"],
-        action="store",
-        type=str,
-        help="asssumed decoder distribution",
     )
     parser.add_argument(
         "--dataset_name",
@@ -77,21 +96,10 @@ if __name__ == "__main__":
 
     parse_results = parser.parse_args()
 
+    train = parse_results.train
     num_epochs = parse_results.num_epochs
     num_repetitions = parse_results.num_repetitions
-    estimator_name = parse_results.estimator_name
-    decoder_dist = parse_results.decoder_dist
-    ds_name = parse_results.dataset_name
+    dataset_name = parse_results.dataset_name
     num_clusters = parse_results.num_clusters
 
-    print(f"{estimator_name}-Experiment with {ds_name} Dataset")
-    for i in range(num_repetitions):
-        print(f"Start {i+1}/{num_repetitions}")
-        run_experiment(
-            ds_name=ds_name,
-            num_epochs=num_epochs,
-            estimator_name=estimator_name,
-            decoder_dist=decoder_dist,
-            num_clusters=num_clusters,
-            SEED=i,
-        )
+    run_experiment(train, dataset_name, num_clusters, num_epochs, num_repetitions)

@@ -6,7 +6,6 @@ import torch.nn.functional as F
 class LocalizationNet(nn.Module):
 
     """
-
         simple fully connected (FC) localization network that is used to estimate
         the distribution (Gaussian) parameters (mean and var) of the Spatial Transformer (ST)
 
@@ -16,8 +15,6 @@ class LocalizationNet(nn.Module):
             FC_hidden_dims (list of ints): hidden dimensions of localization network
             prior_mu_transform (list): initialization for mean [output_dim]
             prior_var_transform (list): initialization for var [output_dim]
-            ################### OPTIONAL PARAMS ###################
-            log_temp_init (float): init temperature of concrete distribution
     """
 
     def __init__(self, config):

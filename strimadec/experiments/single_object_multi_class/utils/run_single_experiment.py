@@ -6,7 +6,10 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from strimadec.models import DVAE, DVAEST
-from strimadec.experiments.single_object_multi_class.utils import get_DVAE_config
+from strimadec.experiments.single_object_multi_class.utils import (
+    experimental_setup,
+    localization_setup,
+)
 
 
 def run_single_experiment(
@@ -34,13 +37,14 @@ def run_single_experiment(
     """
     # make experiment reproducible
     seed_everything(SEED)
-    config = get_DVAE_config(
+    config = experimental_setup(
         dataset_name, num_epochs, estimator_name, decoder_dist, num_clusters, SEED
     )
     # instantiate model
-    if model_name == "DVAE":
+    if model_name == "D-VAE":
         model = DVAE(config)
-    elif model_name == "DVAEST":
+    elif model_name == "D-VAE-ST":
+        config["Localization-Setup"] = localization_setup()
         model = DVAEST(config)
     # define logger
     store_dir = os.path.join(store_dir, f"{model_name}_results")

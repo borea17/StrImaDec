@@ -7,8 +7,8 @@ __pycache__/
 *.so
 
 results/
-DVAE_results/
-DVAEST/
+D-VAE_results/
+D-VAE-ST_results/
 data/
 .vscode/
 

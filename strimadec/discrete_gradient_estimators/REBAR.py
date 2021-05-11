@@ -24,7 +24,7 @@ def REBAR(probs_logits, target, temp, eta, model, loss_func):
         estimator (tensor): batch-wise loss (including variance loss) [batch]
     """
     # compute log probabilities and probabilities [batch, L] (use EPS for numerical stability)
-    EPS = 1e-16
+    EPS = 1e-9
     probs = F.softmax(probs_logits, dim=1).clamp(min=EPS, max=1 - EPS)
     log_probs = probs.log()
     # sample unit noise u, v (exclude 0, since log won't work otherwise) [batch, L]
@@ -38,10 +38,11 @@ def REBAR(probs_logits, target, temp, eta, model, loss_func):
     # Gumbel Softmax to obtain relaxed latent p(z_tilde|x) [batch, L]
     z_tilde = torch.softmax((log_probs + u_Gumbel) / temp, dim=1)
     # sample s_tilde from p(s_tilde|z), see appendix D of Tucker et al. 2017
-    v_Gumbel = -torch.log(-torch.log(v))  # b =1
-    v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
-    v_prime = (1.0 - z) * v_nonGumbel + z * v_Gumbel
-    s_tilde = torch.softmax(v_prime / temp, dim=1)
+    v_b = v[torch.arange(probs.shape[0]), z_ind].unsqueeze(1)
+    v_Gumbel = -torch.log(-torch.log(v))
+    v_prime = -torch.log(-(torch.log(v) / probs) - torch.log(v_b))
+    v_prime[torch.arange(probs.shape[0]), z_ind] = v_Gumbel[torch.arange(probs.shape[0]), z_ind]
+    s_tilde = F.softmax(v_prime / temp, dim=1)
     # compute REBAR estimator (evaluate loss_func at discrete, relaxed & conditioned relaxed input)
     f_z = loss_func(z, target)  # [batch]
     f_z_tilde = loss_func(z_tilde, target)  # [batch]

@@ -1,8 +1,8 @@
-def get_DVAE_config(ds_name, num_epochs, estimator_name, decoder_dist, num_clusters, SEED):
+def experimental_setup(dataset_name, num_epochs, estimator_name, decoder_dist, num_clusters, SEED):
     img_channels, img_dim = 1, 28
     config = {
-        "experiment_name": f"{ds_name}_{decoder_dist}_{estimator_name}",
-        "dataset_name": ds_name,
+        "experiment_name": f"{dataset_name}_{decoder_dist}_{estimator_name}",
+        "dataset_name": dataset_name,
         "VAE-Setup": {
             "encoder_distribution": "Categorical",
             "decoder_distribution": decoder_dist,
@@ -22,6 +22,7 @@ def get_DVAE_config(ds_name, num_epochs, estimator_name, decoder_dist, num_clust
         "num_epochs": num_epochs,
         "log_every_k_epochs": 1,
     }
+
     if estimator_name == "NVIL":
         config["Baseline-Setup"] = {
             "input_dim": img_channels * img_dim * img_dim,
@@ -46,3 +47,14 @@ def get_DVAE_config(ds_name, num_epochs, estimator_name, decoder_dist, num_clust
             "log_temp_init": 0.0,
         }
     return config
+
+
+def localization_setup():
+    img_channels, img_dim = 1, 28
+    localization_setup = {
+        "input_dim": img_channels * img_dim * img_dim,
+        "FC_hidden_dims": [200, 200],
+        "prior_mu_transform": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],  # identity transform
+        "prior_var_transform": [0.01] * 6,
+    }
+    return localization_setup

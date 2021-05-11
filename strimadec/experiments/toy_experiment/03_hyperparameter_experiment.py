@@ -79,4 +79,29 @@ def CONCRETE_experiment():
 
 
 if __name__ == "__main__":
-    pass
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--load",
+        default=True,
+        action="store_false",
+        dest="train",
+        help="load results instead of actual training",
+    )
+    parser.add_argument(
+        "--num_epochs", default=None, action="store", type=int, help="number of epochs to train"
+    )
+    parser.add_argument(
+        "--num_repetitions",
+        default=None,
+        action="store",
+        type=int,
+        help="number of repetitions for each estimator experiment",
+    )
+    parse_results = parser.parse_args()
+    train = parse_results.train
+    num_epochs = parse_results.num_epochs
+    num_repetitions = parse_results.num_repetitions
+
+    batch_size_experiment(train=train, num_epochs=num_epochs, num_repetitions=num_repetitions)

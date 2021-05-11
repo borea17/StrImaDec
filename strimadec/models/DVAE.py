@@ -54,8 +54,6 @@ class DVAE(pl.LightningModule):
         assert (
             config["VAE-Setup"]["encoder_distribution"] == "Categorical"
         ), "The encoding distribution needs to be set to `Categorical` for the DVAE"
-        # # possible implementation error validation error in validation of Categorical distribution
-        # dists.Distribution.set_default_validate_args(False)  # do not validate parameters
         # parse config
         discrete_VAE = VAE(config["VAE-Setup"])
         self.estimator_name, self.dataset_name = config["estimator_name"], config["dataset_name"]
@@ -158,12 +156,16 @@ class DVAE(pl.LightningModule):
         # compute loss and exclude surrogate NLL_estimator loss in numerical representation
         loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach()).mean()
         # actual training step, i.e., backpropagation
-        if self.estimator_name == "RELAX":  # fix c_phi for estimator backward
+        if self.estimator_name == "REBAR":  # fix log_temp for estimator backward
+            self.log_temp.requires_grad = False
+        elif self.estimator_name == "RELAX":  # fix c_phi for estimator backward
             set_requires_grad(self.c_phi, False)
 
         loss.backward()
 
-        if self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
+        if self.estimator_name == "REBAR":  # unfix to allow for updates of log_temp
+            self.log_temp.requires_grad = True
+        elif self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
             set_requires_grad(self.c_phi, True)
         optimizer.step()
         # log losses
@@ -197,17 +199,6 @@ class DVAE(pl.LightningModule):
             self.logger.experiment.add_image("Image and Reconstruction", grid, step)
 
         return
-
-    ########################################
-    ######### VALIDATION FUNCTIONS #########
-    ########################################
-
-    # def validation_step(self, val_batch, batch_idx):
-    #     x, labels = val_batch  # labels are not used here (unsupervised)
-    #     # inference step
-    #     results = self.forward(x)
-    #     # loss unscaled (beta=1)
-    #     return {"loss_unscaled": loss_unscaled}
 
     ########################################
     ####### PLOT AND HELPER FUNCTIONS ######

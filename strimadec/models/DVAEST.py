@@ -86,7 +86,7 @@ class DVAEST(pl.LightningModule):
             self.c_phi = BaselineNet(config["C_PHI-Setup"])
             self.tuneable_hyperparameters = self.c_phi.parameters()
         # input and output sizes infered by pytorch lightning
-        self.example_input_array = torch.Tensor(*self.model.VAE.example_input_shape)
+        self.example_input_array = torch.zeros(*self.model.VAE.example_input_shape)
         return
 
     def forward(self, x):
@@ -174,13 +174,18 @@ class DVAEST(pl.LightningModule):
         # compute loss and exclude surrogate NLL_estimator loss in numerical representation
         loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach() + KL_Div_position).mean()
         # actual training step, i.e., backpropagation
-        if self.estimator_name == "RELAX":  # fix c_phi for estimator backward
+        if self.estimator_name == "REBAR":  # fix log_temp for estimator backward
+            self.log_temp.requires_grad = False
+        elif self.estimator_name == "RELAX":  # fix c_phi for estimator backward
             set_requires_grad(self.c_phi, False)
 
-        self.manual_backward(loss, optimizer)
+        loss.backward()
 
-        if self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
+        if self.estimator_name == "REBAR":  # unfix to allow for updates of log_temp
+            self.log_temp.requires_grad = True
+        elif self.estimator_name == "RELAX":  # unfix to allow for updates of c_phi
             set_requires_grad(self.c_phi, True)
+        optimizer.step()
         optimizer.step()
         # log losses
         self.log("losses/loss", loss, on_step=False, on_epoch=True)
@@ -214,17 +219,6 @@ class DVAEST(pl.LightningModule):
             self.logger.experiment.add_image("Image and Reconstruction", grid, step)
 
         return
-
-    ########################################
-    ######### VALIDATION FUNCTIONS #########
-    ########################################
-
-    # def validation_step(self, val_batch, batch_idx):
-    #     x, labels = val_batch  # labels are not used here (unsupervised)
-    #     # inference step
-    #     results = self.forward(x)
-    #     # loss unscaled (beta=1)
-    #     return {"loss_unscaled": loss_unscaled}
 
     ########################################
     ####### PLOT AND HELPER FUNCTIONS ######
@@ -306,16 +300,5 @@ class DVAEST(pl.LightningModule):
             self.dataset = TensorDataset(data, torch.from_numpy(labels))
         return
 
-    # def setup(self, stage=None):
-    #     # Assign train/val datasets for use in dataloaders
-    #     num_samples_val1 = int(0.8 * len(self.dataset))
-    #     num_samples_val2 = len(self.dataset) - num_samples_val1
-    #     split = [num_samples_val1, num_samples_val2]
-    #     self.train_ds, self.val_ds = random_split(self.dataset, split)
-    #     return
-
     def train_dataloader(self):
         return DataLoader(self.dataset, batch_size=1000, num_workers=12, shuffle=True)
-
-    # def val_dataloader(self):
-    #     return DataLoader(self.dataset, batch_size=64, num_workers=12, shuffle=False)

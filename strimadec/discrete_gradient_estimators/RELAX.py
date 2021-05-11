@@ -46,8 +46,8 @@ def RELAX(probs_logits, target, c_phi, model, loss_func):
     f_z_tilde = loss_func(z_tilde, target)  # [batch]
     f_s_tilde = loss_func(s_tilde, target)  # [batch]
     log_prob = dists.Categorical(probs=probs).log_prob(z_ind)  # [batch]
-    # compute gradient estimator (detach c_phi such that backward won't affect it)
-    estimator = (f_z - f_s_tilde).detach() * log_prob + f_z_tilde.detach() - f_s_tilde.detach()
+    # compute gradient estimator (c_phi is set fixed in backward and won't be affected)
+    estimator = (f_z - f_s_tilde).detach() * log_prob + f_z_tilde - f_s_tilde
     # compute variance estimator (use partial derivatives for the sake of clarity)
     g_log_prob = grad(
         log_prob,
@@ -72,6 +72,11 @@ def RELAX(probs_logits, target, c_phi, model, loss_func):
     )[0]
     # compute gradient estimator as a function of eta and temp [batch, L]
     g_estimator = (f_z - f_s_tilde).unsqueeze(1) * g_log_prob + (g_f_z_tilde - g_f_s_tilde)
+    if type(model).__name__ == "DVAEST_LossModel":  # avoid not implemented error of Hessian
+        # avoid RuntimeError: derivative for grid_sampler_2d_backward is not implemented
+        g_estimator = (f_z - f_s_tilde).unsqueeze(1) * g_log_prob + (
+            g_f_z_tilde - g_f_s_tilde
+        ).detach()
     # compute variance estimator [batch, L]
     var_estimator = g_estimator ** 2
     # obtain only gradients for c_phi (fix model parameters)

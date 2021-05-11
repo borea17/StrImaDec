@@ -46,17 +46,9 @@ def REBAR(probs_logits, target, temp, eta, model, loss_func):
     f_z = loss_func(z, target)  # [batch]
     f_z_tilde = loss_func(z_tilde, target)  # [batch]
     f_s_tilde = loss_func(s_tilde, target)  # [batch]
-    z_tilde_detach_temp = torch.softmax((log_probs + u_Gumbel) / temp.detach(), dim=1)
-    s_tilde_detach_temp = torch.softmax(v_prime / temp.detach(), dim=1)
-    f_z_tilde_detach_temp = loss_func(z_tilde_detach_temp, target)
-    f_s_tilde_detach_temp = loss_func(s_tilde_detach_temp, target)
     log_prob = dists.Categorical(probs=probs).log_prob(z_ind)  # [batch]
-    # compute gradient estimator (detach temp such that backward won't affect it)
-    # estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (f_z_tilde - f_s_tilde)
-
-    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (
-        f_z_tilde_detach_temp - f_s_tilde_detach_temp
-    )
+    # compute gradient estimator (temp is set fixed in backward and won't be affected)
+    estimator = (f_z - eta * f_s_tilde).detach() * log_prob + eta * (f_z_tilde - f_s_tilde)
     # compute variance estimator (use partial derivatives for the sake of clarity)
     g_log_prob = grad(
         log_prob,
@@ -83,6 +75,11 @@ def REBAR(probs_logits, target, temp, eta, model, loss_func):
     g_estimator = (f_z - eta * f_s_tilde).unsqueeze(1) * g_log_prob + eta * (
         g_f_z_tilde - g_f_s_tilde
     )
+    if type(model).__name__ == "DVAEST_LossModel":  # avoid not implemented error of Hessian
+        # avoid RuntimeError: derivative for grid_sampler_2d_backward is not implemented
+        g_estimator = (f_z - eta * f_s_tilde).unsqueeze(1) * g_log_prob + eta * (
+            g_f_z_tilde - g_f_s_tilde
+        ).detach()
     # compute variance estimator [batch, L]
     var_estimator = g_estimator ** 2
     # obtain only gradients for temp (fix model parameters)

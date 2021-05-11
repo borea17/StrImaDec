@@ -23,14 +23,9 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
         num_repetitions (int): number of repetitions for each estimator experiment
     """
     target = torch.tensor([0.499, 0.501]).unsqueeze(0)
-    target = torch.tensor([0.501, 0.499]).unsqueeze(0)
-    # target = torch.tensor([0.45, 0.55]).unsqueeze(0)
     estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
-    # estimator_names = ["REINFORCE", "REBAR"]
-    estimator_names = ["RELAX"]
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
-    store_path = f"{store_dir}/replication_experiment.npy"
     if train:  # run experiment and save results in file
         results = {}
         for i, estimator_name in enumerate(estimator_names):
@@ -52,12 +47,14 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
                 "elapsed_times": elapsed_times,
             }
             # store current estimator results
-            store_path_estimator = f"{store_dir}/toy_experiment_{estimator_name}.npy"
+            store_path_estimator = f"{store_dir}/replication_experiment_{estimator_name}.npy"
             np.save(store_path_estimator, results[estimator_name])
-        # store all results
-        np.save(store_path, results)
-    else:  # load experimental results from file
-        results = np.load(store_path, allow_pickle=True).item()
+    else:  # load experimental results from files
+        results = {}
+        for i, estimator_name in enumerate(estimator_names):
+            store_path_estimator = f"{store_dir}/replication_experiment_{estimator_name}.npy"
+            estimator_results = np.load(store_path_estimator, allow_pickle=True).item()
+            results[estimator_name] = estimator_results
     # plot results and store them
     store_path_fig = f"{store_dir}/replication_experiment.pdf"
     plot_toy(results, store_path_fig)

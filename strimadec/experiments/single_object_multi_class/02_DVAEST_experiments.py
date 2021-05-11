@@ -3,23 +3,32 @@ from pytorch_lightning import seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-from strimadec.models import DVAE
+from strimadec.models import DVAEST
 
 
 def run_experiment():
+    """
+        executes the D-VAE-ST experiment of the thesis, i.e., testing several datasets
+        using the D-VAE-ST model
+
+    Args:
+        train (bool): decides whether experiment is executed or stored results are used
+        num_epochs (int): number of epochs to train each estimator
+        num_repetitions (int): number of repetitions for each estimator experiment
+    """
     dataset_name = "MNIST"
     estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
-    estimator_name = "REINFORCE"
+    estimator_name = "CONCRETE"
     estimator_name = "REBAR"
-    estimator_name = "RELAX"
+    estimator_name = "Exact gradient"
     decoder_distribution = "Gaussian"
     config = build_config(dataset_name, estimator_name, decoder_distribution)
     # make experiment reproducible
     seed_everything(config["SEED"])
     # instantiate model
-    model = DVAE(config)
+    model = DVAEST(config)
     # define logger
-    logger = TensorBoardLogger("DVAE", name=config["experiment_name"])
+    logger = TensorBoardLogger("DVAEST", name=config["experiment_name"])
     # define callback of model checkpoint (save model checkpoints and keep them)
     checkpoint_callback = ModelCheckpoint(period=1, save_top_k=-1)
     callbacks = [checkpoint_callback]
@@ -52,6 +61,12 @@ def build_config(dataset_name, estimator_name, decoder_distribution):
             "img_dim": 28,
             "FC_hidden_dims_enc": [200, 200],
             "FC_hidden_dims_dec": [200, 200],
+        },
+        "Localization-Setup": {
+            "input_dim": 1 * 28 * 28,
+            "FC_hidden_dims": [200, 200],
+            "prior_mu_transform": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],  # identity transform
+            "prior_var_transform": [0.01] * 6,
         },
         "estimator_name": estimator_name,
         "lambda_1": 2 / 3,

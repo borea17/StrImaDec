@@ -7,23 +7,25 @@ import torchvision as tv
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-from strimadec.models.modules import VAE, BaselineNet
-from strimadec.models.utils import DVAE_LossModel, compute_accuracy
-from strimadec.datasets import SimplifiedMNIST, FullMNIST
+from strimadec.models.modules import VAE, BaselineNet, LocalizationNet
+from strimadec.models.utils import DVAEST_LossModel, compute_accuracy
+from strimadec.datasets import FullMNIST
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
 from strimadec.discrete_gradient_estimators.utils import set_requires_grad
 
 
-class DVAE(pl.LightningModule):
+class DVAEST(pl.LightningModule):
 
     """
-        D-VAE lighting module, i.e., a VAE with discrete latent space (categorical distribution)
+        D-VAE-ST lighting module, i.e., a VAE with discrete latent space (categorical distribution)
         in which a discrete gradient estimator is used to approximate the the discrete expectation
+        and a Spatial Transformer (ST) is used to include positional & shape variations of the data
 
     Args:
         config (dict): dictionary containing the following entries
             VAE-Setup (dict): dictionary containing the setup (hidden layers, etc) of the VAE
+            Localization-Setup (dict): dictionary for neural network that estimates ST parameters
             dataset_name (str): name of dataset
             estimator_name (str): name of the discrete gradient estimator
             lr (float): learning rate for VAE network parameters (ADAM)
@@ -45,8 +47,6 @@ class DVAE(pl.LightningModule):
                 tune_lr (float): learning rate for baseline network parameters (ADAM)
                 tune_weight_decay (float): weight_decay for baseline network parameters (ADAM)
                 C_PHI-Setup (dict): dictionary containing the setup of C_PHI network
-
-
     """
 
     def __init__(self, config) -> None:
@@ -57,11 +57,12 @@ class DVAE(pl.LightningModule):
         ), "The encoding distribution needs to be set to `Categorical` for the DVAE"
         # parse config
         discrete_VAE = VAE(config["VAE-Setup"])
+        localization_net = LocalizationNet(config["Localization-Setup"])
         self.estimator_name, self.dataset_name = config["estimator_name"], config["dataset_name"]
         self.lr, self.weight_decay = config["lr"], config["weight_decay"]
         self.log_every_k_epochs = config["log_every_k_epochs"]
         # define model
-        self.model = DVAE_LossModel(discrete_VAE)
+        self.model = DVAEST_LossModel(discrete_VAE, localization_net)
         # define prior_probs (uniform)
         prior_probs = (1 / self.model.VAE.latent_dim) * torch.ones(self.model.VAE.latent_dim)
         self.register_buffer("prior_probs", prior_probs.clone())
@@ -90,7 +91,7 @@ class DVAE(pl.LightningModule):
 
     def forward(self, x):
         """
-            defines inference procedure of the D-VAE, i.e., computes latent space and
+            defines inference procedure of the D-VAE-ST, i.e., computes latent space and
             keeps track of useful metrics
 
         Args:
@@ -98,11 +99,27 @@ class DVAE(pl.LightningModule):
 
         Returns:
             results (dict): results dictionary containing
+                x_p (torch tensor): image prototype [batch, img_channels, img_dim, img_dim]
                 x_tilde (torch tensor): image reconstruction [batch, img_channels, img_dim, img_dim]
-                z (torch tensor): latent space - one hot encoded [batch, L]
+                z (torch tensor): classlatent space - one hot encoded [batch, L]
                 probs_logits (torch tensor): assigned probability of latents in logits [batch, L]
+                t (torch tensor): sampled transformation vector [batch, 6]
+                mu_t (torch tensor): mean of sampled transformation t [batch, 6]
+                log_var_t (torch tensor): log variance of sampled transformation t [batch, 6]
         """
-        results = self.model.VAE(x)
+        results_VAE = self.model.VAE(x)
+        results_localization = self.model.localization_net(x)
+        x_p = results_VAE["x_tilde"]
+        x_tilde = self.model.localization_net.spatial_transform(x_p, results_localization["t"])
+        results = {
+            "x_p": x_p,
+            "x_tilde": x_tilde,
+            "z": results_VAE["z"],
+            "probs_logits": results_VAE["probs_logits"],
+            "t": results_localization["t"],
+            "mu_t": results_localization["mu_t"],
+            "log_var_t": results_localization["log_var_t"],
+        }
         return results
 
     ########################################
@@ -152,10 +169,10 @@ class DVAE(pl.LightningModule):
         x, labels = batch  # labels are only used for logging
         # loss computation
         losses = self.compute_loss(x)
-        # model_params = list(self.model.VAE.parameters())
         KL_Div, NLL, NLL_estimator = losses["KL-Div"], losses["NLL"], losses["NLL_estimator"]
+        KL_Div_position = self.model.retrieve_kl_div_position()
         # compute loss and exclude surrogate NLL_estimator loss in numerical representation
-        loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach()).mean()
+        loss = (KL_Div + NLL + NLL_estimator - NLL_estimator.detach() + KL_Div_position).mean()
         # actual training step, i.e., backpropagation
         if self.estimator_name == "RELAX":  # fix c_phi for estimator backward
             set_requires_grad(self.c_phi, False)
@@ -168,6 +185,7 @@ class DVAE(pl.LightningModule):
         # log losses
         self.log("losses/loss", loss, on_step=False, on_epoch=True)
         self.log("losses/KL-Div", KL_Div.mean(), on_step=False, on_epoch=True)
+        self.log("losses/KL-Div-Position", KL_Div_position.mean(), on_step=False, on_epoch=True)
         self.log("losses/NLL", NLL.mean(), on_step=False, on_epoch=True)
         self.log("losses/NLL_estimator", NLL_estimator.mean(), on_step=False, on_epoch=True)
         # special logs
@@ -217,9 +235,10 @@ class DVAE(pl.LightningModule):
         images = image_batch[i_samples]
 
         results = self.forward(images)
+        x_p = results["x_p"].clamp(0, 1)
         x_tilde = results["x_tilde"].clamp(0, 1)
 
-        images_cat = torch.cat((images.unsqueeze(0), x_tilde.unsqueeze(0)), 0)
+        images_cat = torch.cat((images.unsqueeze(0), x_p.unsqueeze(0), x_tilde.unsqueeze(0)), 0)
         return images_cat
 
     ########################################
@@ -257,11 +276,46 @@ class DVAE(pl.LightningModule):
     ########################################
 
     def prepare_data(self) -> None:
-        if self.dataset_name == "SimplifiedMNIST":
-            self.dataset = SimplifiedMNIST(train=True, digits=[2, 6, 9])
-        elif self.dataset_name == "FullMNIST":
-            self.dataset = FullMNIST(train=True, digits=[2, 6, 9])
+        if self.dataset_name == "MNIST":
+            # self.dataset = MNIST(train=True, download=True)
+            MNIST_dataset = datasets.MNIST(
+                "./data", transform=transforms.ToTensor(), train=True, download=True
+            )
+            # TEMPORARY
+            from PIL import Image, ImageDraw
+            from sklearn.preprocessing import OneHotEncoder
+            from torch.utils.data import TensorDataset
+            import numpy as np
+
+            # select only specific digits
+            data = []
+            labels = []
+            for digit in [2, 6, 9]:
+                indices_digits = MNIST_dataset.targets == digit
+                torch_imgs = [
+                    transforms.ToTensor()(Image.fromarray(img.numpy(), mode="L"))
+                    for img in MNIST_dataset.data[indices_digits]
+                ]
+                data.append(torch.vstack(torch_imgs))
+                labels.extend([digit] * sum(indices_digits))
+            # vertical stack torch tensors within data list
+            data = torch.vstack(data).unsqueeze(1)
+            # create one-hot encoded labels
+            labels = OneHotEncoder().fit_transform(np.array(labels).reshape(-1, 1)).toarray()
+            # make tensor dataset
+            self.dataset = TensorDataset(data, torch.from_numpy(labels))
         return
+
+    # def setup(self, stage=None):
+    #     # Assign train/val datasets for use in dataloaders
+    #     num_samples_val1 = int(0.8 * len(self.dataset))
+    #     num_samples_val2 = len(self.dataset) - num_samples_val1
+    #     split = [num_samples_val1, num_samples_val2]
+    #     self.train_ds, self.val_ds = random_split(self.dataset, split)
+    #     return
 
     def train_dataloader(self):
         return DataLoader(self.dataset, batch_size=1000, num_workers=12, shuffle=True)
+
+    # def val_dataloader(self):
+    #     return DataLoader(self.dataset, batch_size=64, num_workers=12, shuffle=False)

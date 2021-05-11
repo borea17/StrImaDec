@@ -1,0 +1,1 @@
+from strimadec.experiments.single_object_multi_class.utils.build_DVAE_config import get_DVAE_config

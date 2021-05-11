@@ -79,5 +79,5 @@ def build_experimental_setup(estimator_name, target, num_epochs, SEED):
 
         torch.manual_seed(SEED)  # seed here to make network initializations deterministic
         params["tune_lr"] = 0.01
-        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.5)
+        params["c_phi"] = C_PHI(num_classes=num_classes, log_temp_init=0.0)
     return params

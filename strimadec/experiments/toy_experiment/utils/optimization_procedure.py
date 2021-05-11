@@ -103,6 +103,7 @@ def run_stochastic_optimization(params):
         elif "REBAR" in estimator_name:
             temp = log_temp.exp()
             estimator, _ = REBAR(probs_logits_ups, target_ups, temp, eta, model, loss_func)
+            log_temp.requires_grad = False
         elif "RELAX" in estimator_name:
             estimator, _ = RELAX(probs_logits_ups, target_ups, c_phi, model, loss_func)
             set_requires_grad(c_phi, False)  # do not update c_phi parameters in estimator backward
@@ -112,9 +113,10 @@ def run_stochastic_optimization(params):
         optimizer.step()
         if tuneable_params:
             if "RELAX" in estimator_name:
-                set_requires_grad(c_phi, False)  # update c_phi when calling tune optimizer step
+                set_requires_grad(c_phi, True)  # update c_phi when calling tune optimizer step
+            elif "REBAR" in estimator_name:
+                log_temp.requires_grad = True
             tune_optimizer.step()
-
         ################## TRACK METRICS ########################
         ### computation times in seconds ###
         elapsed_time = time.time() - tic
@@ -154,8 +156,6 @@ def run_stochastic_optimization(params):
         g_estimator = probs_logits_ups.grad
         for class_ind in range(num_classes):
             vars_grad[epoch, class_ind] = g_estimator.var(dim=0)[class_ind].item()
-
-        print(c_phi.log_temp)
     if "Exact gradient" in estimator_name:
         # make sure that analytical estimator converges to true optimum by computing optimal loss
         possible_losses = torch.zeros(num_classes)

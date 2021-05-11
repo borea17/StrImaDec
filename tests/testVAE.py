@@ -113,5 +113,6 @@ class testVAE(TestCase):
             "FC_hidden_dims_enc": np.random.randint(10, 50, size=(np.random.randint(1, 5))),
             "FC_hidden_dims_dec": np.random.randint(10, 50, size=(np.random.randint(1, 5))),
             "latent_dim": np.random.randint(2, 10),
+            "fixed_var": 1,
         }
         return config

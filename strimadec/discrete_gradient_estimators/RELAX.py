@@ -37,9 +37,10 @@ def RELAX(probs_logits, target, c_phi, model, loss_func):
     # generate z_tilde
     z_tilde = c_phi(log_probs + u_Gumbel)
     # sample s_tilde from p(s_tilde|z), see appendix D of Tucker et al. 2017
-    v_Gumbel = -torch.log(-torch.log(v))  # b =1
-    v_nonGumbel = -torch.log(-(v.log() / probs) - v.log())  # otherwise
-    v_prime = (1.0 - z) * v_nonGumbel + z * v_Gumbel
+    v_b = v[torch.arange(probs.shape[0]), z_ind].unsqueeze(1)
+    v_Gumbel = -torch.log(-torch.log(v))
+    v_prime = -torch.log(-(torch.log(v) / probs) - torch.log(v_b))
+    v_prime[torch.arange(probs.shape[0]), z_ind] = v_Gumbel[torch.arange(probs.shape[0]), z_ind]
     s_tilde = c_phi(v_prime)
     # compute RELAX estimator (evaluate loss at discrete, relaxed & conditioned relaxed input)
     f_z = loss_func(z, target)  # [batch]

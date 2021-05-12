@@ -24,7 +24,7 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
     """
     target = torch.tensor([0.499, 0.501]).unsqueeze(0)
     estimator_names = ["REINFORCE", "REBAR", "RELAX", "Exact gradient"]
-    estimator_names = ["REINFORCE", "REBAR"]
+    # estimator_names = ["REINFORCE", "RELAX"]
     # define path where to store/load results
     store_dir = os.path.join(pathlib.Path(__file__).resolve().parents[0], "results")
     if train:  # run experiment and save results in file

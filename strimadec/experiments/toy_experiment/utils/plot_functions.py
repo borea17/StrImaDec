@@ -33,7 +33,8 @@ def plot_toy(results, store_path_fig):
     ax.spines["top"].set_color("none")
     ax.tick_params(axis="both", which="major", labelsize=labelsize)
     # add legend
-    plt.legend(loc=(0.5, 0.2), fontsize=fontsize)
+    # plt.legend(loc=(0.5, 0.2), fontsize=fontsize)
+    plt.legend(fontsize=fontsize)
 
     plt.subplot(1, 2, 2)
     for i, estimator_name in enumerate(results.keys()):

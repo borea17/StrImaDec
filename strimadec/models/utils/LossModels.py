@@ -37,7 +37,7 @@ class DVAEST_LossModel(nn.Module):
         # compute kl divergence between transform_dist and prior_transform_dist [batch_size]
         q_transform_dist = [mu_transform, log_var_transform.exp()]
         p_transform_dist = [prior_mu_transform, prior_var_transform]
-        kl_div = gaussian_kl(q_transform_dist, p_transform_dist)
+        kl_div = gaussian_kl(q_transform_dist, p_transform_dist).sum(1)
         return kl_div
 
     def retrieve_kl_div_position(self):

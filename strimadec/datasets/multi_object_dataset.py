@@ -4,6 +4,8 @@ import torch
 import numpy as np
 from torchvision import transforms, datasets
 
+from strimadec.datasets.utils import get_git_root
+
 
 class MultiMNIST(torch.utils.data.TensorDataset):
 
@@ -11,20 +13,25 @@ class MultiMNIST(torch.utils.data.TensorDataset):
 
     def __init__(self):
         # FIXED VARIABLES
-        N_SAMPLES, CANVAS_SIZE, MNIST_SIZE, SEED = 30000, 64, 28, 1
+        N_SAMPLES, CANVAS_SIZE, MNIST_SIZE, SEED = 20000, 64, 28, 42
         # make dataset construction deterministic
         np.random.seed(SEED)
         train = True
-        path_to_file = "/".join(os.path.dirname(__file__).split("/")[:-7])
-        store_dir = os.path.join(path_to_file, "strimadec/datasets/data")
+        git_root_path = get_git_root(os.getcwd())
+        store_dir = os.path.join(git_root_path, "strimadec/datasets/data")
         transform = transforms.ToTensor()
         target_transform, download = None, True
         MNIST = datasets.MNIST(store_dir, train, transform, target_transform, download)
-        if os.path.exists(os.path.join(store_dir), "MultiMNIST.pth"):
-            tensors = torch.load(os.path.join(store_dir), "MultiMNIST.pth")
+        if os.path.exists(os.path.join(store_dir, "MultiMNIST.pth")):
+            tensors = torch.load(os.path.join(store_dir, "MultiMNIST.pth"))
             data, labels = tensors["data"], tensors["labels"]
         else:
             data, labels = MultiMNIST.generate_dataset(N_SAMPLES, MNIST, CANVAS_SIZE, MNIST_SIZE)
+            # check whether data folder exists
+            if not os.path.isdir(store_dir):
+                os.mkdir(store_dir)
+            # save data and labels in file
+            torch.save({"data": data, "labels": labels}, os.path.join(store_dir, "MultiMNIST.pth"))
         # define tensor dataset
         super(MultiMNIST, self).__init__(data, labels)
         return

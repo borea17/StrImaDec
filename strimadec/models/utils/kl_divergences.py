@@ -5,14 +5,14 @@ def gaussian_kl(q, p):
 
     Args:
         q (list) Gaussian distribution parametrized by
-            q[0] (torch tensor): mean of q [batch_size, latent_dim]
-            q[1] (torch tensor): variance of q [batch_size, latent_dim]
+            q[0] (torch tensor): mean of q [batch_size, *latent_dims]
+            q[1] (torch tensor): variance of q [batch_size, *latent_dims]
         p (list) Gaussian distribution parametrized by
-            p[0] (torch tensor): mean of p [batch_size, latent_dim]
-            p[1] (torch tensor): variance of p [batch_size, latent_dim]
+            p[0] (torch tensor): mean of p [batch_size, *latent_dims]
+            p[1] (torch tensor): variance of p [batch_size, *latent_dims]
 
     Returns:
-        kl_div (torch.tensor): kl divergence [batch_size]
+        kl_div (torch.tensor): kl divergence [batch_size, *latent_dims]
 
     see https://pytorch.org/docs/stable/_modules/torch/distributions/kl.html
     """
@@ -21,4 +21,34 @@ def gaussian_kl(q, p):
 
     var_ratio = var_q / var_p
     t1 = (mean_q - mean_p).pow(2) / var_p
-    return -0.5 * (1 + var_ratio.log() - var_ratio - t1).sum(1)
+    return -0.5 * (1 + var_ratio.log() - var_ratio - t1)
+
+
+def bernoulli_kl(q_probs, p_probs):
+    """computes the KL divergence per batch between two
+    Bernoulli distribution parametrized by q_probs and p_probs
+
+    Note: EPS is added for numerical stability, see
+    https://github.com/pytorch/pytorch/issues/15288
+
+    Args:
+        q_probs (torch tensor): mean of q [batch_size, *latent_dims]
+        p_probs (torch tensor): mean of p [batch_size, *latent_dims]
+
+    Returns:
+        kl_div (torch tensor): kl divergence [batch_size, *latent_dims]
+    """
+    EPS = 1e-32
+    p1 = p_probs
+    p0 = 1 - p1
+    q1 = q_probs
+    q0 = 1 - q1
+
+    logq1 = (q1 + EPS).log()
+    logq0 = (q0 + EPS).log()
+    logp1 = (p1).log()
+    logp0 = (p0).log()
+
+    kl_div_1 = q1 * (logq1 - logp1)
+    kl_div_0 = q0 * (logq0 - logp0)
+    return kl_div_1 + kl_div_0

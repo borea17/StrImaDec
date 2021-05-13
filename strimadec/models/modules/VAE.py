@@ -126,7 +126,6 @@ class VAE(nn.Module):
             x_tilde = x_dec.view(batch_size, -1, self.img_channels, self.img_dim, self.img_dim)
         if self.decoder_distribution == "Gaussian":
             # force output to be positive (EPS for numerical stability)
-            pass
-            # EPS = 1e-32
-            # x_tilde = (x_tilde + EPS).abs()
+            EPS = 1e-32
+            x_tilde = (x_tilde + EPS).abs()
         return x_tilde

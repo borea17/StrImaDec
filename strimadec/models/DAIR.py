@@ -12,11 +12,12 @@ from strimadec.models.modules import VAE, RNN
 from strimadec.models.utils import gaussian_kl, bernoulli_kl
 
 
-class AIR(pl.LightningModule):
+class DAIR(pl.LightningModule):
 
     """
 
-        Attend-Infer-Repeat class as described by Eslami et al. (2016)
+        Discrete Attend-Infer-Repeat class using NVIL estimator for both the number of objects
+        and the object class
 
     Args:
         config (dict): dictionary containing the following configurations
@@ -31,6 +32,7 @@ class AIR(pl.LightningModule):
             prior_var_z_where (list): prior on var of z_where
             lr (float): learning rate for VAE network parameters (ADAM)
             weight_decay (float): weight_decay for VAE network parameters (ADAM)
+
             base_lr (float): learning rate for baseline network parameters (ADAM)
             base_weight_decay (float): weight_decay for baseline network parameters (ADAM)
     """
@@ -61,9 +63,9 @@ class AIR(pl.LightningModule):
         self.register_buffer("prior_mean_z_where", prior_mean_z_where)
         self.register_buffer("prior_var_z_where", prior_var_z_where)
         # store some useful parameters as attributes
-        self.window_dim = self.vae.img_dim
-        self.z_what_dim = self.vae.latent_dim
-        self.omega_dim = 1 + 2 * 3 + 2 * self.z_what_dim
+        self.window_dim = config["What VAE-Setup"]["img_dim"]
+        self.z_what_dim = config["What VAE-Setup"]["latent_dim"]
+        self.omega_dim = 1 + 2 * 3 + self.z_what_dim
         self.z_dim = 1 + 3 + self.z_what_dim
         self.rnn_hidden_state_dim = config["RNN-Setup"]["hidden_state_dim"]
         self.rnn_hidden_state_dim_b = config["RNN Baseline-Setup"]["hidden_state_dim"]
@@ -131,22 +133,20 @@ class AIR(pl.LightningModule):
             epsilon_w = torch.randn_like(log_var_where_i)
             z_i_where = mu_where_i + torch.exp(0.5 * log_var_where_i) * epsilon_w
             # use z_where and x to obtain x_att_i
-            x_att_i = AIR.image_to_window(x, z_i_where, self.img_shape[0], self.window_dim)
-            # put x_att_i through VAE
+            x_att_i = DAIR.image_to_window(x, z_i_where, self.img_shape[0], self.window_dim)
+            # put x_att_i through VAE (get prototype)
             results_vae = self.vae(x_att_i)
             x_tilde_att_i = results_vae["x_tilde"]
             z_i_what = results_vae["z"]
-            mu_what_i, log_var_what_i = results_vae["mu_E"], results_vae["log_var_E"]
+            probs_logits_what_i = results_vae["probs_logits"]
             # create image reconstruction
-            x_tilde_i = AIR.window_to_image(x_tilde_att_i, z_i_where, self.img_shape)
+            x_tilde_i = DAIR.window_to_image(x_tilde_att_i, z_i_where, self.img_shape)
             # update im1 with current versions
             z_im1 = torch.cat((z_i_pres, z_i_where, z_i_what), 1)
             h_im1 = h_i
             h_im1_b = h_i_b
             # put all distribution parameters into omega_i
-            omega_i = torch.cat(
-                (prob_pres_i, mu_where_i, log_var_where_i, mu_what_i, log_var_what_i), 1
-            )
+            omega_i = torch.cat((prob_pres_i, mu_where_i, log_var_where_i, probs_logits_what_i), 1)
             # store intermediate results
             all_z[:, i : i + 1] = z_im1.unsqueeze(1)
             all_omega[:, i : i + 1] = omega_i.unsqueeze(1)
@@ -154,7 +154,7 @@ class AIR(pl.LightningModule):
             baseline_values[:, i] = baseline_value
             # for nice visualization
             if save_attention_rectangle:
-                attention_rects[:, i] = AIR.get_attention_rectangle(
+                attention_rects[:, i] = DAIR.get_attention_rectangle(
                     z_i_where, self.img_shape[1]
                 ) * z_i_pres.unsqueeze(1)
         # save results in dict (easy accessibility)
@@ -228,7 +228,7 @@ class AIR(pl.LightningModule):
             (results["baseline_values"] - baseline_target.detach()) ** 2 * mask_delay
         ).sum(1)
         # sum and scale losses
-        loss = NLL.mean() + kl_div.mean() + NVIL_term.mean() + baseline_loss.mean()
+        loss = NLL.mean() + 0.5 * kl_div.mean() + NVIL_term.mean() + baseline_loss.mean()
         ############################################################################
         # actual training step, i.e., backpropagation
         optimizer = self.optimizers()

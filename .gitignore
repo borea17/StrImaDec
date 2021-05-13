@@ -9,6 +9,7 @@ __pycache__/
 results/
 D-VAE_results/
 D-VAE-ST_results/
+AIR_results/
 data/
 .vscode/
 

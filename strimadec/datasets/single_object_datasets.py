@@ -1,18 +1,21 @@
 import os
 
 import torch
+import git
 import numpy as np
 from PIL import Image
 from torchvision import datasets, transforms
 from sklearn.preprocessing import OneHotEncoder
+
+from strimadec.datasets.utils import get_git_root
 
 
 class FullMNIST(datasets.MNIST):
     """standard MNIST datasets with one-hot vectors as labels instead of class labels"""
 
     def __init__(self, train):
-        path_to_file = "/".join(os.path.dirname(__file__).split("/")[:-7])
-        store_dir = os.path.join(path_to_file, "strimadec/datasets/data")
+        git_root_path = get_git_root(os.getcwd())
+        store_dir = os.path.join(git_root_path, "strimadec/datasets/data")
         transform = transforms.ToTensor()
         target_transform, download = None, True
         super(FullMNIST, self).__init__(store_dir, train, transform, target_transform, download)
@@ -29,8 +32,8 @@ class Letters(datasets.EMNIST):
     """26 letters dataset with one-hot vectors as labels"""
 
     def __init__(self) -> None:
-        path_to_file = "/".join(os.path.dirname(__file__).split("/")[:-7])
-        store_dir = os.path.join(path_to_file, "strimadec/datasets/data")
+        git_root_path = get_git_root(os.getcwd())
+        store_dir = os.path.join(git_root_path, "strimadec/datasets/data")
         transform = transforms.ToTensor()
         target_transform, download = None, True
         split = "letters"
@@ -55,8 +58,8 @@ class SimplifiedMNIST(torch.utils.data.TensorDataset):
     """contains only a subset of MNIST digits with one-hot vectors as labels"""
 
     def __init__(self, train, digits):
-        path_to_file = "/".join(os.path.dirname(__file__).split("/")[:-7])
-        store_dir = os.path.join(path_to_file, "strimadec/datasets/data")
+        git_root_path = get_git_root(os.getcwd())
+        store_dir = os.path.join(git_root_path, "strimadec/datasets/data")
         transform = transforms.ToTensor()
         target_transform, download = None, True
         MNIST_dataset = datasets.MNIST(store_dir, train, transform, target_transform, download)

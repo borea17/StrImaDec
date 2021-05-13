@@ -1,1 +1,1 @@
-from strimadec.datasets.single_object_datasets import FullMNIST, SimplifiedMNIST
+from strimadec.datasets.single_object_datasets import FullMNIST, SimplifiedMNIST, Letters

@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset_name",
         default="SimplifiedMNIST",
-        choices=["SimplifiedMNIST", "FullMNIST"],
+        choices=["SimplifiedMNIST", "FullMNIST", "Letters"],
         action="store",
         type=str,
         help="name of dataset",

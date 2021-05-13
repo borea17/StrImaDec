@@ -252,7 +252,7 @@ class DVAE(pl.LightningModule):
         if self.dataset_name == "SimplifiedMNIST":
             self.dataset = SimplifiedMNIST(train=True, digits=[2, 6, 9])
         elif self.dataset_name == "FullMNIST":
-            self.dataset = FullMNIST(train=True, digits=[2, 6, 9])
+            self.dataset = FullMNIST(train=True)
         return
 
     def train_dataloader(self):

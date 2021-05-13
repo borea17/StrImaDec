@@ -17,6 +17,8 @@ class AIR(pl.LightningModule):
             What VAE-Setup (dict): dictionary containing the setup for VAE of AIR
             RNN-Setup (dict): dictionary containing the setup of the RNN for z_pres, z_where
             RNN Baseline-Setup (dict): dictionary containing the setup for the RNN NVIL baseline
+            number_of_slots_train (int): maximum number of objects assumed during training
+            img_shape (list): shape of whole image provided as a list
 
             lr (float): learning rate for VAE network parameters (ADAM)
             weight_decay (float): weight_decay for VAE network parameters (ADAM)
@@ -36,8 +38,16 @@ class AIR(pl.LightningModule):
         self.vae = VAE(config["What VAE-Setup"])
         self.rnn = RNN(config["RNN-Setup"])
         self.baseline = RNN(config["RNN Baseline-Setup"])
+
+        self.N_train = config["number_of_slots_train"]
         self.lr, self.weight_decay = config["lr"], config["weight_decay"]
         self.log_every_k_epochs = config["log_every_k_epochs"]
+        self.img_shape = config["img_shape"]
+        # store some useful parameters as attributes
+        self.window_dim = config["What VAE-Setup"]["img_dim"]
+        self.z_what_dim = config["What VAE-Setup"]["latent_dim"]
+        self.rnn_hidden_state_dim = config["RNN-Setup"]["hidden_state_dim"]
+        self.rnn_hidden_state_dim_b = config["RNN Baseline-Setup"]["hidden_state_dim"]
         return
 
     def forward(self, x, N, save_attention_rectangle=False):

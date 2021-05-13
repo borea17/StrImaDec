@@ -1,5 +1,4 @@
 import os
-import pathlib
 
 import torch
 import numpy as np
@@ -26,7 +25,7 @@ class FullMNIST(datasets.MNIST):
         return img, target
 
 
-class LetterDataset(datasets.EMNIST):
+class Letters(datasets.EMNIST):
     """26 letters dataset with one-hot vectors as labels"""
 
     def __init__(self) -> None:
@@ -36,13 +35,19 @@ class LetterDataset(datasets.EMNIST):
         target_transform, download = None, True
         split = "letters"
         target_transform, download = None, True
-        super().__init__(store_dir, split, transform, target_transform, download)
+        super().__init__(
+            root=store_dir,
+            split=split,
+            transform=transform,
+            target_transform=target_transform,
+            download=download,
+        )
         return
 
     def __getitem__(self, idx):
         img, target = super().__getitem__(idx)
         # convert target to one hot vector (there are 26 classes)
-        target = torch.eye(26)[target]
+        target = torch.eye(26)[target - 1]  # target goes from 1 to 26
         return img, target
 
 

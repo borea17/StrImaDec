@@ -4,9 +4,9 @@ import torch.nn as nn
 import torch.distributions as dists
 import numpy as np
 import torchvision as tv
-from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
+from strimadec.datasets.single_object_datasets import SimplifiedMNIST, FullMNIST, Letters
 from strimadec.models.modules import VAE, BaselineNet, LocalizationNet
 from strimadec.models.utils import DVAEST_LossModel, compute_accuracy
 from strimadec.datasets import FullMNIST
@@ -270,34 +270,12 @@ class DVAEST(pl.LightningModule):
     ########################################
 
     def prepare_data(self) -> None:
-        if self.dataset_name == "MNIST":
-            # self.dataset = MNIST(train=True, download=True)
-            MNIST_dataset = datasets.MNIST(
-                "./data", transform=transforms.ToTensor(), train=True, download=True
-            )
-            # TEMPORARY
-            from PIL import Image, ImageDraw
-            from sklearn.preprocessing import OneHotEncoder
-            from torch.utils.data import TensorDataset
-            import numpy as np
-
-            # select only specific digits
-            data = []
-            labels = []
-            for digit in [2, 6, 9]:
-                indices_digits = MNIST_dataset.targets == digit
-                torch_imgs = [
-                    transforms.ToTensor()(Image.fromarray(img.numpy(), mode="L"))
-                    for img in MNIST_dataset.data[indices_digits]
-                ]
-                data.append(torch.vstack(torch_imgs))
-                labels.extend([digit] * sum(indices_digits))
-            # vertical stack torch tensors within data list
-            data = torch.vstack(data).unsqueeze(1)
-            # create one-hot encoded labels
-            labels = OneHotEncoder().fit_transform(np.array(labels).reshape(-1, 1)).toarray()
-            # make tensor dataset
-            self.dataset = TensorDataset(data, torch.from_numpy(labels))
+        if self.dataset_name == "SimplifiedMNIST":
+            self.dataset = SimplifiedMNIST(train=True, digits=[2, 6, 9])
+        elif self.dataset_name == "FullMNIST":
+            self.dataset = FullMNIST(train=True)
+        elif self.dataset_name == "Letters":
+            self.dataset = Letters()
         return
 
     def train_dataloader(self):

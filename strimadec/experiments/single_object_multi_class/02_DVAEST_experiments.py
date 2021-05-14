@@ -21,6 +21,7 @@ def run_experiment(train: bool, dataset_name: str, num_clusters, num_epochs, num
         num_repetitions (int): number of repetitions for each estimator experiment
     """
     estimator_names = ["REINFORCE", "NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
+    estimator_names = ["NVIL", "CONCRETE", "REBAR", "RELAX", "Exact gradient"]
     MODEL_NAME, DECODER_DIST = "D-VAE-ST", "Gaussian"
     if train:  # results can be visualized via `tensorboard --logdir DVAE_results`
         for i, estimator_name in enumerate(estimator_names):

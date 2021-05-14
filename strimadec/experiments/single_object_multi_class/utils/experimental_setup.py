@@ -6,7 +6,7 @@ def experimental_setup(dataset_name, num_epochs, estimator_name, decoder_dist, n
         "VAE-Setup": {
             "encoder_distribution": "Categorical",
             "decoder_distribution": decoder_dist,
-            "fixed_var": 0.1,
+            "fixed_var": 0.2,
             "latent_dim": num_clusters,
             "img_channels": img_channels,
             "img_dim": img_dim,
@@ -16,7 +16,7 @@ def experimental_setup(dataset_name, num_epochs, estimator_name, decoder_dist, n
         "estimator_name": estimator_name,
         "lambda_1": 2 / 3,
         "lambda_2": 1.0,
-        "lr": 5e-5,
+        "lr": 1e-4,
         "weight_decay": 1e-6,
         "SEED": SEED,
         "num_epochs": num_epochs,
@@ -29,7 +29,7 @@ def experimental_setup(dataset_name, num_epochs, estimator_name, decoder_dist, n
             "FC_hidden_dims": [400, 400],
             "output_dim": 1,
         }
-        config["tune_lr"] = 1e-3
+        config["tune_lr"] = 1e-2
         config["tune_weight_decay"] = 1e-7
     elif estimator_name == "REBAR":
         config["tune_lr"] = 1e-4

@@ -10,6 +10,7 @@ results/
 D-VAE_results/
 D-VAE-ST_results/
 AIR_results/
+DAIR_results/
 data/
 .vscode/
 

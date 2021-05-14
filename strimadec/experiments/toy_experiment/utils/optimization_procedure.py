@@ -1,9 +1,11 @@
 import time
+import warnings
 
 import torch
 import numpy as np
 from pytorch_lightning import seed_everything
 
+from strimadec.experiments.toy_experiment.utils.optimal_loss import compute_optimal_loss
 from strimadec.discrete_gradient_estimators import analytical
 from strimadec.discrete_gradient_estimators import REINFORCE, NVIL, CONCRETE, REBAR, RELAX
 from strimadec.discrete_gradient_estimators.utils import set_requires_grad
@@ -158,12 +160,12 @@ def run_stochastic_optimization(params):
             vars_grad[epoch, class_ind] = g_estimator.var(dim=0)[class_ind].item()
     if "Exact gradient" in estimator_name:
         # make sure that analytical estimator converges to true optimum by computing optimal loss
-        possible_losses = torch.zeros(num_classes)
-        for class_ind in range(num_classes):
-            one_hot_class = torch.eye(num_classes)[class_ind].unsqueeze(0).to(device)
-            possible_losses[class_ind] = loss_func(one_hot_class, target)
-        optimal_loss = min(possible_losses)
-        assert (optimal_loss - expected_loss) ** 2 < 1e-6, "analytical solution seems to be wrong"
+        optimal_loss = compute_optimal_loss(target, loss_func)
+        if (optimal_loss - expected_loss) ** 2 > 1e-9:
+            warnings.warn(
+                f"Analytical solution seems to be wrong: Optimal solution is {optimal_loss}"
+                + f" and analytical solution is {expected_loss}"
+            )
     results = {
         "expected_losses": expected_losses,
         "vars_grad": vars_grad.sum(1),

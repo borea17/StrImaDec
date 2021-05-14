@@ -1,6 +1,9 @@
+import torch
+
+
 def gaussian_kl(q, p):
     """
-        computes the KL divergence per batch between two Gaussian distribution
+        computes the KL divergence per batch between two Gaussian distributions
         parameterized by q and p
 
     Args:
@@ -25,8 +28,9 @@ def gaussian_kl(q, p):
 
 
 def bernoulli_kl(q_probs, p_probs):
-    """computes the KL divergence per batch between two
-    Bernoulli distribution parametrized by q_probs and p_probs
+    """
+        computes the KL divergence per batch between two Bernoulli distributions
+        parametrized by q_probs and p_probs
 
     Note: EPS is added for numerical stability, see
     https://github.com/pytorch/pytorch/issues/15288
@@ -52,3 +56,26 @@ def bernoulli_kl(q_probs, p_probs):
     kl_div_1 = q1 * (logq1 - logp1)
     kl_div_0 = q0 * (logq0 - logp0)
     return kl_div_1 + kl_div_0
+
+
+def categorical_kl(q_logits, p_logits):
+    """
+        computes the KL divergence per batch between two Categorical distributions
+        parameterized by q and p
+
+
+    Args:
+        q_logits (torch tensor): logits of q dist [batch_size, *latent_dims]
+        p_logits (torch tensor): logits of p dist [batch_size, *latent_dims]
+
+    Returns:
+        kl_div (torch tensor): kl divergence [batch_size, *latent_dims]
+
+    see https://pytorch.org/docs/stable/_modules/torch/distributions/kl.html
+    """
+    q_probs = torch.softmax(q_logits, dim=-1)
+
+    t = q_probs * (q_logits - p_logits)
+    t[(q_probs == 0).expand_as(t)] = 0
+
+    return t

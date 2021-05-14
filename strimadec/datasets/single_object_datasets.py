@@ -81,7 +81,3 @@ class SimplifiedMNIST(torch.utils.data.TensorDataset):
         # define tensor dataset
         super(SimplifiedMNIST, self).__init__(data, torch.from_numpy(labels))
         return
-
-
-if __name__ == "__main__":
-    simplifiedMnist = SimplifiedMNIST(True, [2, 6, 9])

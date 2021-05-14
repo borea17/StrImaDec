@@ -6,7 +6,7 @@ import numpy as np
 
 from strimadec.experiments.toy_experiment.utils import (
     run_stochastic_optimization,
-    plot_toy,
+    Plots,
     build_experimental_setup,
 )
 
@@ -58,7 +58,7 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
             results[estimator_name] = estimator_results
     # plot results and store them
     store_path_fig = f"{store_dir}/replication_experiment.pdf"
-    plot_toy(results, store_path_fig)
+    Plots.plot_toy(results, store_path_fig)
     return
 
 

@@ -7,8 +7,10 @@ from prettytable import PrettyTable
 
 from strimadec.experiments.toy_experiment.utils import (
     run_stochastic_optimization,
-    plot_toy,
+    Plots,
     build_experimental_setup,
+    loss_func,
+    compute_optimal_loss,
 )
 
 
@@ -40,6 +42,11 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
                 losses[i_experiment] = current_results_dict["expected_losses"]
                 vars_grad[i_experiment] = current_results_dict["vars_grad"]
                 elapsed_times[i_experiment] = current_results_dict["elapsed_times"]
+                if estimator_name == "Exact gradient":  # deterministic, do not run for all reps
+                    losses = losses[i_experiment][None, :]
+                    vars_grad = vars_grad[i_experiment][None, :]
+                    elapsed_times = elapsed_times[i_experiment][None, :]
+                    break
             results[estimator_name] = {
                 "losses": losses,
                 "vars_grad": vars_grad,
@@ -56,13 +63,26 @@ def run_experiment(train: bool, num_epochs=None, num_repetitions=None):
             results[estimator_name] = estimator_results
     # plot results and store them
     store_path_fig = f"{store_dir}/toy_experiment.pdf"
-    plot_toy(results, store_path_fig)
-    # summarize computation times
-    table = PrettyTable(["gradient estimator", "avg step time [ms]", "avg total time [s]"])
+    Plots.plot_toy(results, store_path_fig)
+    # make a table summary
+    table = PrettyTable(
+        [
+            "gradient estimator",
+            "avg abs error [1000]",
+            "avg log var [1]",
+            "avg step time [ms]",
+            "avg total time [s]",
+        ]
+    )
+    optimal_loss = compute_optimal_loss(target, loss_func).item()
     for name_of_estimator, data_estimator in results.items():
+        avg_error = (np.abs(data_estimator["losses"] - optimal_loss)).mean(0).mean(0)
+        avg_log_vars = np.log(data_estimator["vars_grad"]).mean(0).mean(0)
         table.add_row(
             [
                 name_of_estimator,
+                np.round(1000 * avg_error, 2),
+                np.round(avg_log_vars, 2),
                 np.round(1000 * data_estimator["elapsed_times"].mean(), 2),
                 np.round(data_estimator["elapsed_times"].sum(), 2),
             ]

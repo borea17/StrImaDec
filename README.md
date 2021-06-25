@@ -150,7 +150,7 @@ python strimadec/experiments/multi_object_multi_class/01_comparison_experiment.p
 
 **WARNING**: Running all of the commands may take days and is not advised. 
 
-All results (trained networks, plots and tensorboard directories) can be downloaded from [this google drive](https://drive.google.com/drive/folders/1LlEyW-94k4Me_NVeSytyCAk7Xmy9y9mU?usp=sharing) (about 11GB). Copy the downloaded folders into the respective folder under `strimadec/experiments/`, then you can run the scripts with the addendum `--load` in a few minutes. 
+All results (trained networks, plots and tensorboard directories) can be downloaded from [this google drive](https://drive.google.com/drive/folders/1LlEyW-94k4Me_NVeSytyCAk7Xmy9y9mU?usp=sharing) (about 15GB). Copy the downloaded folders into the respective folder under `strimadec/experiments/`, then you can run the scripts with the addendum `--load` in a few minutes. 
 
 ### Contributions
 

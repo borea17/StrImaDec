@@ -1,0 +1,3 @@
+import strimadec.experiments.toy_experiment
+import strimadec.experiments.single_object_multi_class
+import strimadec.experiments.multi_object_multi_class

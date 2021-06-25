@@ -1,0 +1,64 @@
+dist: focal
+
+language: python
+
+python:
+    - "3.8.5"
+  
+install:
+    - pip install -r requirements.txt
+    - python setup.py install
+
+jobs:
+    include:
+        - stage: test
+          name: "Tests"
+          script:
+              - "cd tests"
+              - "python -m unittest"
+        - stage: experiments
+          name: "Toy Experiments"
+          script:
+              - "python strimadec/experiments/toy_experiment/01_replication_experiment.py 
+                --num_epochs 100 --num_repetitions 1"
+              - "python strimadec/experiments/toy_experiment/02_toy_experiment.py  
+                --num_epochs 100 --num_repetitions 1"
+              - "python strimadec/experiments/toy_experiment/03_hyperparameter_experiment.py 
+                --num_epochs 100 --num_repetitions 1"
+        - stage: experiments
+          name: "Single Object Multi Class Experiments D-VAE"
+          script:
+              - "python strimadec/experiments/single_object_multi_class/01_DVAE_experiments.py 
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'SimplifiedMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/01_DVAE_experiments.py 
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FullMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/01_DVAE_experiments.py 
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FashionMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/01_DVAE_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'Letters'"
+        - stage: experiments
+          name: "Single Object Multi Class Experiments D-VAE-ST"
+          script:
+              - "python strimadec/experiments/single_object_multi_class/02_DVAEST_experiments.py 
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'SimplifiedMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/02_DVAEST_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FullMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/02_DVAEST_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FashionMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/02_DVAEST_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'Letters'"
+        - stage: experiments
+          name: "Single Object Multi Class Experiments D-VAE-ST Robustness"
+          script:    
+              - "python strimadec/experiments/single_object_multi_class/03_DVAEST_overclustering_experiments.py 
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'SimplifiedMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/03_DVAEST_overclustering_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FullMNIST'"
+              - "python strimadec/experiments/single_object_multi_class/03_DVAEST_overclustering_experiments.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'FashionMNIST'"
+        - stage: experiments
+          name: "Multi Object Multi Class Experiments D-VAE-ST"
+          script:    
+              - "python strimadec/experiments/multi_object_multi_class/01_comparison_experiment.py
+                --num_epochs 1 --num_repetitions 1 --dataset_name 'MultiMNIST'"
+

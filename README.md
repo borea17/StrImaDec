@@ -12,7 +12,7 @@ This repository contains the implementation for my thesis
 *Abstract*: 
 
 >Object-centered perception lays the foundation of human intelligence and may be
->the key to general artificial intelligence. Despite recent advances, artificial
+>a stepping stone towards artificial general intelligence. Despite recent advances, artificial
 >vision systems that decompose images into objects and their relations without
 >any supervision lack real-world applicability and only work on simplistic
 >datasets. While there are multiple reasons associated to this obstacle, we

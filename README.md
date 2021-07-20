@@ -48,6 +48,9 @@ This repository contains the implementation for my thesis
 4. **D-VAE with a Spatial Transformer (D-VAE-ST) - Objects are prototype modifications**:  
     To overcome the limitations of the D-VAE, we can include a spatial transformer that generates the reconstructed image by disturbing the prototype image using a latent (infered) transformation vector. Thereby, we can model positional and shape variations within the data.
 
+
+    ![Objects as Prototype Modifications](./img/objects_as_prototype_modifications.png)
+
     Although the D-VAE-ST is based on a more realistic generative model, it is still only applicable to simple 2D data in which the same texture is assumed for all objects within a class. For real-world applicability, it would be interesting to extend the prototype definition, e.g., we could define prototypes as three dimensional objects and infer the view to generate a reconstructed image.
 
 5. **Discrete Attend-Infer-Repeat (DAIR) - A multi-object-multi-class model**:  

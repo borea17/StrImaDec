@@ -7,7 +7,7 @@
 
 This repository contains the implementation for my thesis 
 
-* Structured Image Decompositions using Unsupervised Object-Centric Learning
+* [Structured Image Decompositions using Unsupervised Object-Centric Learning](https://github.com/borea17/StrImaDec/blob/main/thesis/thesis.pdf)
 
 *Abstract*: 
 
